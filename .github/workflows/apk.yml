@@ -27,8 +27,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - uses: android-actions/setup-android@v3
-
       - name: Instalar dependências
         run: |
           npm ci
@@ -112,18 +110,22 @@ jobs:
                   debug {
                       signingConfig signingConfigs.meudia
                   }""", 1)
-          s = re.sub(r"versionCode \d+", 'versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()', s)
+          s = re.sub(r"versionCode \d+", 'versionCode Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER") ?: "1")', s)
           open(g, "w").write(s)
           print("Projeto Android preparado.")
           FIM
           python preparar.py
           npx cap sync android
+          echo "----- build.gradle do app -----"
+          cat android/app/build.gradle
 
       - name: Compilar APK
         working-directory: android
         run: |
+          echo "SDK do Android: $ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Renomear
         run: cp android/app/build/outputs/apk/debug/app-debug.apk MeuDia.apk
@@ -132,8 +134,10 @@ jobs:
         with:
           name: MeuDia-apk
           path: MeuDia.apk
+          if-no-files-found: error
 
       - name: Publicar link para baixar no celular
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
