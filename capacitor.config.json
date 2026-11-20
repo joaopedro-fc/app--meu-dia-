@@ -1,0 +1,17 @@
+{
+  "appId": "br.joaopedro.meudia",
+  "appName": "Meu Dia",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#0E1116"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "LocalNotifications": {
+      "iconColor": "#8E7CFF",
+      "smallIcon": "ic_stat_sol"
+    }
+  }
+}
