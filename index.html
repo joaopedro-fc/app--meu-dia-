@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E1116">
+  <title>Meu Dia</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="tela" aria-live="polite"></main>
+
+  <div class="entrada" id="entrada-fixa">
+    <div class="atalhos" id="atalhos" aria-label="Atalhos"></div>
+    <form id="form-assistente">
+      <textarea id="entrada" rows="1" placeholder="Escreva um gasto ou compromisso…" aria-label="Escreva um gasto ou compromisso"></textarea>
+      <button type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+    </form>
+  </div>
+
+  <nav class="abas" aria-label="Seções">
+    <button data-aba="hoje" class="ativa"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="4.5"/><path d="M12 3v3M4.2 6.2l2.1 2.1M19.8 6.2l-2.1 2.1M2 13h3M19 13h3M3 20h18"/></svg>Hoje</button>
+    <button data-aba="agenda"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Agenda</button>
+    <button class="mais" aria-label="Adicionar"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button data-aba="financas"><svg viewBox="0 0 24 24"><path d="M4 20V11M10 20V5M16 20v-6M22 20H2"/></svg>Finanças</button>
+    <button data-aba="listas"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>Listas</button>
+  </nav>
+
+  <div id="folha-fundo" hidden></div>
+  <section id="folha" role="dialog" aria-modal="true" aria-labelledby="folha-titulo" hidden></section>
+  <div id="aviso" role="status" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
