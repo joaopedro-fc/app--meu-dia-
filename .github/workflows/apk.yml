@@ -1,0 +1,142 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar dependências
+        run: |
+          npm ci
+          pip install pillow
+
+      - name: Organizar os arquivos do app
+        run: |
+          mkdir -p www/fonts
+          for f in index.html style.css app.js; do
+            if [ -f "$f" ]; then cp "$f" www/; fi
+          done
+          ls -la www
+          cp node_modules/@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2 www/fonts/manrope.woff2
+
+      - name: Criar o projeto Android
+        run: |
+          rm -rf android
+          npx cap add android
+
+      - name: Ícone, assinatura e versão
+        env:
+          CHAVE_B64: "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"
+        run: |
+          cat > preparar.py <<'FIM'
+          """Ajusta o projeto Android gerado pelo Capacitor: ícone, tela de abertura,
+          chave de assinatura fixa e número de versão. Roda no GitHub Actions.
+          Autor: João Pedro Figueredo da Cunha"""
+          import base64, glob, math, os, re
+          from PIL import Image, ImageDraw
+
+          RAIZ = os.getcwd()
+          APP = os.path.join(RAIZ, "android", "app")
+          RES = os.path.join(APP, "src", "main", "res")
+          FUNDO = (14, 17, 22, 255); ROXO = (142, 124, 255, 255); VERDE = (94, 230, 168, 255); BRANCO = (255, 255, 255, 255)
+
+          def marca(d, cx, cy, r, w, anel=ROXO, ponto=VERDE):
+              d.arc([cx - r, cy - r, cx + r, cy + r], start=-60, end=230, fill=anel, width=w)
+              a = math.radians(-60); px, py = cx + r * math.cos(a), cy + r * math.sin(a)
+              d.ellipse([px - w * .75, py - w * .75, px + w * .75, py + w * .75], fill=ponto)
+              s = r * .42
+              d.line([(cx - s, cy + s * .05), (cx - s * .25, cy + s * .75), (cx + s, cy - s * .6)], fill=anel, width=int(w * .9), joint="curve")
+
+          def icone(tam, fundo, escala, mono=False, circulo=False):
+              S = tam * 4; im = Image.new("RGBA", (S, S), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+              if fundo:
+                  if circulo: d.ellipse([0, 0, S, S], fill=FUNDO)
+                  else: d.rounded_rectangle([0, 0, S, S], radius=S * .24, fill=FUNDO)
+              r = S * escala
+              marca(d, S / 2, S / 2, r, int(r * (.24 if mono else .22)), *( (BRANCO, BRANCO) if mono else (ROXO, VERDE) ))
+              return im.resize((tam, tam), Image.LANCZOS)
+
+          for k, f in {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}.items():
+              os.makedirs(f"{RES}/mipmap-{k}", exist_ok=True); os.makedirs(f"{RES}/drawable-{k}", exist_ok=True)
+              icone(int(48 * f), True, .27).save(f"{RES}/mipmap-{k}/ic_launcher.png")
+              icone(int(48 * f), True, .27, circulo=True).save(f"{RES}/mipmap-{k}/ic_launcher_round.png")
+              icone(int(108 * f), False, .19).save(f"{RES}/mipmap-{k}/ic_launcher_foreground.png")
+              icone(int(24 * f), False, .36, mono=True).save(f"{RES}/drawable-{k}/ic_stat_sol.png")
+
+          for p in glob.glob(f"{RES}/drawable*/splash.png"):
+              w, h = Image.open(p).size; im = Image.new("RGBA", (w, h), FUNDO); d = ImageDraw.Draw(im)
+              r = min(w, h) * .075; marca(d, w / 2, h / 2, r, int(r * .22)); im.save(p)
+
+          cor = f"{RES}/values/ic_launcher_background.xml"
+          if os.path.exists(cor):
+              open(cor, "w").write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0E1116</color>\n</resources>\n')
+
+          # chave de assinatura fixa: o APK novo instala por cima do antigo sem perder os dados
+          open(os.path.join(APP, "meudia.keystore"), "wb").write(base64.b64decode(os.environ["CHAVE_B64"]))
+
+          g = os.path.join(APP, "build.gradle"); s = open(g).read()
+          if "signingConfigs.meudia" not in s:
+              s = s.replace("    buildTypes {", """    signingConfigs {
+                  meudia {
+                      storeFile file('meudia.keystore')
+                      storePassword 'meudia123'
+                      keyAlias 'meudia'
+                      keyPassword 'meudia123'
+                  }
+              }
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.meudia
+                  }""", 1)
+          s = re.sub(r"versionCode \d+", 'versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()', s)
+          open(g, "w").write(s)
+          print("Projeto Android preparado.")
+          FIM
+          python preparar.py
+          npx cap sync android
+
+      - name: Compilar APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Renomear
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk MeuDia.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeuDia-apk
+          path: MeuDia.apk
+
+      - name: Publicar link para baixar no celular
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Meu Dia (versão ${{ github.run_number }})
+          files: MeuDia.apk
+          make_latest: true
