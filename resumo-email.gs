@@ -5,7 +5,8 @@
  * Como funciona: o app manda seus dados (agenda, listas e finanças) para este script
  * sempre que você muda alguma coisa. Todo dia, no horário escolhido no app, o script monta o
  * resumo e manda para o e-mail da conta Google dona deste script (só você recebe).
- * O horário do envio é escolhido no app, em Ajustes → Resumo por e-mail.
+ * O horário do envio é escolhido no app, em Ajustes → Lembretes e e-mail.
+ * Também guarda o backup automático do app (Ajustes → Assistente com IA e backup).
  *
  * Passo a passo de instalação: veja o README do projeto ou a conversa com o Claude.
  */
@@ -20,19 +21,52 @@ function doPost(e) {
     if (CHAVE && (!e.parameter || e.parameter.chave !== CHAVE)) return resposta_({ ok: false, erro: 'chave inválida' });
     const corpo = JSON.parse(e.postData.contents);
     if (corpo.dados) salvarDados_(corpo.dados);
+    let backupEm = PropertiesService.getScriptProperties().getProperty('backupEm') || null;
+    if (corpo.backup) backupEm = salvarBackup_(corpo.backup);
     const salvo = PropertiesService.getScriptProperties().getProperty('horario');
     let horario = salvo === null ? '06:30' : salvo;
     if (typeof corpo.horario === 'string' && corpo.horario !== horario) horario = agendar_(corpo.horario);
     if (corpo.acao === 'teste') enviarResumo();
-    return resposta_({ ok: true, horario: horario });
+    return resposta_({ ok: true, horario: horario, backupEm: backupEm });
   } catch (err) {
     return resposta_({ ok: false, erro: String(err) });
   }
 }
 
-function doGet() {
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (p.acao === 'backup') {
+    if (CHAVE && p.chave !== CHAVE) return resposta_({ ok: false, erro: 'chave inválida' });
+    const props = PropertiesService.getScriptProperties();
+    const txt = lerBloco_('b');
+    return resposta_({ ok: true, em: props.getProperty('backupEm'), backup: txt ? JSON.parse(txt) : null });
+  }
   const d = lerDados_();
   return resposta_({ ok: true, app: 'Meu Dia', atualizado: d ? d.atualizado : null });
+}
+
+/* Backup completo do app (o mais recente). Fica nas propriedades do script, só na sua conta. */
+function salvarBackup_(backup) {
+  salvarBloco_('b', JSON.stringify(backup));
+  const em = new Date().toISOString();
+  PropertiesService.getScriptProperties().setProperty('backupEm', em);
+  return em;
+}
+function salvarBloco_(prefixo, txt) {
+  const props = PropertiesService.getScriptProperties();
+  const tam = 8000, partes = Math.ceil(txt.length / tam) || 1;
+  const antigas = Number(props.getProperty(prefixo + 'partes') || 0);
+  const novo = {}; novo[prefixo + 'partes'] = String(partes);
+  for (let i = 0; i < partes; i++) novo[prefixo + i] = txt.slice(i * tam, (i + 1) * tam);
+  props.setProperties(novo);
+  for (let i = partes; i < antigas; i++) props.deleteProperty(prefixo + i);
+}
+function lerBloco_(prefixo) {
+  const props = PropertiesService.getScriptProperties();
+  const n = Number(props.getProperty(prefixo + 'partes') || 0);
+  let txt = '';
+  for (let i = 0; i < n; i++) txt += props.getProperty(prefixo + i) || '';
+  return txt || null;
 }
 
 function resposta_(o) {

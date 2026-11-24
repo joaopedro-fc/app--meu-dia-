@@ -84,7 +84,7 @@ const LEMBRETES = [[null, "Sem lembrete"], [0, "Na hora"], [10, "10 min antes"],
 /* ================= estado ================= */
 const CHAVE = "meudia_v1";
 const PADRAO = () => ({
-  seq: 1, eventos: [], trans: [], mercado: [], prioridades: [], histMercado: {}, investimentos: [],
+  seq: 1, eventos: [], trans: [], mercado: [], prioridades: [], histMercado: {}, investimentos: [], recorrentes: [],
   cfg: { botoes: "redondo", emailUrl: "", emailHora: "06:30", emailSecoes: {}, nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
 });
 let S;
@@ -122,21 +122,40 @@ function dadosResumo() {
   };
 }
 function lerStatusSync() { try { return JSON.parse(localStorage.getItem("meudia_sync") || "{}"); } catch { return {}; } }
+const INTERVALO_BACKUP = 30 * 60 * 1000; // manda o backup completo no máximo a cada 30 minutos
+function copiaParaBackup() {
+  let txt = JSON.stringify(S);
+  if (txt.length > 350000) txt = JSON.stringify({ ...S, cfg: { ...S.cfg, foto: "" } }); // limite do Google: sem a foto se ficar grande
+  return JSON.parse(txt);
+}
 async function sincronizar(acao = "dados") {
   const url = (S.cfg.emailUrl || "").trim();
   if (!url) return { ok: false, erro: "Cole o link do resumo primeiro." };
+  const anterior = lerStatusSync();
+  const mandarBackup = acao === "backup" || !anterior.backupEm || Date.now() - new Date(anterior.backupEm).getTime() > INTERVALO_BACKUP;
   let st;
   try {
-    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ acao, dados: dadosResumo(), horario: S.cfg.emailHora || "" }) });
+    const corpo = { acao: acao === "backup" ? "dados" : acao, dados: dadosResumo(), horario: S.cfg.emailHora || "" };
+    if (mandarBackup) corpo.backup = copiaParaBackup();
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(corpo) });
     let j = {};
     try { j = await r.json(); } catch { j = { ok: r.ok || (r.status >= 300 && r.status < 400) }; } // o Google responde com redirecionamento depois de salvar
-    st = j.ok ? { ok: true, em: new Date().toISOString(), horario: typeof j.horario === "string" ? j.horario : lerStatusSync().horario } : { ok: false, em: new Date().toISOString(), erro: j.erro || `HTTP ${r.status}` };
+    st = j.ok ? { ok: true, em: new Date().toISOString(), horario: typeof j.horario === "string" ? j.horario : anterior.horario,
+      backupEm: j.backupEm || anterior.backupEm, backupScript: j.backupEm ? true : anterior.backupScript } : { ...anterior, ok: false, em: new Date().toISOString(), erro: j.erro || `HTTP ${r.status}` };
   } catch (e) {
-    st = { ok: false, em: new Date().toISOString(), erro: "Sem conexão com o link" };
+    st = { ...anterior, ok: false, em: new Date().toISOString(), erro: "Sem conexão com o link" };
   }
   try { localStorage.setItem("meudia_sync", JSON.stringify(st)); } catch { /* ignora */ }
   return st;
+}
+async function buscarBackupGoogle() {
+  const url = (S.cfg.emailUrl || "").trim();
+  if (!url) throw new Error("Cole o link do script primeiro");
+  const r = await fetch(url + (url.includes("?") ? "&" : "?") + "acao=backup");
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.erro || "O script não devolveu o backup");
+  if (!j.backup) throw new Error("Ainda não tem backup salvo no Google");
+  return j;
 }
 const novoId = () => S.seq++;
 
@@ -232,7 +251,7 @@ const acharCategoria = (t, mapa) => Object.keys(mapa).find((c) => mapa[c].some((
 const acharMetodo = (t) => Object.keys(PALAVRAS_METODO).find((m) => PALAVRAS_METODO[m].some((p) => tem(t, p))) || null;
 const SEM_DATA = /\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b/g;
 
-function interpretarLocal(msg) {
+function interpretarLocalBase(msg) {
   const t = semAcento(msg.trim());
   const palavras = t.split(/\s+/);
   const primeira = palavras[0] || "";
@@ -279,7 +298,8 @@ function interpretarLocal(msg) {
   const ehGasto = PAL_GASTO.includes(primeira) || (valor !== null && catGasto !== "Outros" && !data && !hora);
   const ignorar = new Set(["gastei", "gasto", "paguei", "comprei", "recebi", "ganhei", "receita", "despesa", "reais", "real", "caiu", "entrada",
     "no", "na", "em", "de", "do", "da", "com", "debito", "credito", "pix", "dinheiro", "cartao", "o", "a", "r", "hoje", "ontem", "um", "uma",
-    "banco", "brasil", "bb", "c6", "bank", "nubank", "inter", "pelo", "pela"]);
+    "banco", "brasil", "bb", "c6", "bank", "nubank", "inter", "pelo", "pela",
+    "todo", "toda", "todos", "todas", "dia", "mes", "meses", "semana", "semanas", "ano", "anos", "dias", "mensal", "mensalmente", "semanal", "anual", "diariamente"]);
   const descricao = () => {
     const d = (msg.toLowerCase().replace(/\b(c6( bank)?|banco do brasil)\b/g, " ").match(/[a-zà-ú]+/g) || [])
       .filter((w) => w.length > 1 && !ignorar.has(semAcento(w))).slice(0, 4).join(" ");
@@ -291,7 +311,7 @@ function interpretarLocal(msg) {
     if (cmd.includes(primeira)) txt = txt.trim().split(/\s+/).slice(1).join(" ");
     txt = txt.replace(SEM_DATA, "")
       .replace(/\b\d{1,2}(:\d{2}|h\d{0,2})(?!\d)/g, "")
-      .replace(/(^|\s)(hoje|amanh[ãa]|depois de amanh[ãa]|dia \d{1,2}|[àa]s \d{1,2}|sem lembrete|dia todo|(pr[óo]xim[oa] )?(segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo)(-feira)?)(?=\s|$)/gi, " ")
+      .replace(/(^|\s)(hoje|amanh[ãa]|depois de amanh[ãa]|dia \d{1,2}|[àa]s \d{1,2}|sem lembrete|dia todo|tod[oa]s? (os |as )?(dias?|semanas?|m[eê]s(es)?|anos?)|diariamente|mensalmente|semanalmente|anualmente|tod[oa]|(pr[óo]xim[oa] )?(segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo)(-feira)?)(?=\s|$)/gi, " ")
       .replace(/\s{2,}/g, " ").replace(/^[\s,:-]+|[\s,:-]+$/g, "")
       .replace(/(\s+(no|na|em|de|do|da|às|as|para|pra|o|a))+$/i, "").replace(/^(no|na|o|a)\s+/i, "");
     return txt ? txt[0].toUpperCase() + txt.slice(1) : "";
@@ -360,6 +380,15 @@ function interpretarLocal(msg) {
   ] }];
 }
 
+function interpretarLocal(msg) {
+  const acoes = interpretarLocalBase(msg), rep = acharRepeticao(semAcento(msg));
+  if (rep) acoes.forEach((a) => {
+    if (a.acao === "add_transacao" || a.acao === "add_evento") a.repetir = rep;
+    if (a.acao === "completar") a.pre = { ...(a.pre || {}), repetir: rep };
+  });
+  return acoes;
+}
+
 const AJUDA = "Escreva do seu jeito: “gastei 35,90 na farmácia no débito”, “recebi 1500 salário”, " +
   "“reunião 12/12 14:30 na ATI”, “lista leite, pão e café”, “quero comprar air fryer 400” ou “resumo outubro”.";
 
@@ -375,6 +404,7 @@ Responda SOMENTE JSON {"acoes":[...]}. Uma mensagem pode ter várias ações. A�
 - {"acao":"add_transacao","tipo":"despesa"|"receita","valor":number,"categoria":str,"metodo":"débito"|"crédito"|"pix"|"dinheiro"|null,"descricao":str,"data":"YYYY-MM-DD"} — despesas: ${cats}. receitas: ${catsR}. Farmácia/remédio=Saúde; supermercado/feira=Mercado; restaurante/lanche/ifood/padaria=Alimentação; uber/gasolina=Transporte; aluguel=Moradia; luz/água/internet=Contas; netflix/spotify=Assinaturas; curso/livro=Educação. "no cartão" sem dizer qual = crédito. descricao curta. data = hoje se não disser.
 - Em add_transacao, inclua "banco" quando o usuário disser: um de ${JSON.stringify(S.cfg.bancos)} ("bb" = Banco do Brasil, "c6" = C6 Bank); senão null.
 - {"acao":"add_aporte","valor":number,"tipo":"CDB / CDI"|"Poupança"|"Caixinha"|"Tesouro Direto"|"LCI / LCA"|"Ações e FIIs"|"Cripto"|"Outros"|null,"banco":str|null} — guardou ou investiu dinheiro (valor positivo) ou resgatou/retirou (valor negativo). Ex.: "guardei 300 na caixinha do C6".
+- Em add_evento e add_transacao, inclua "repetir": "diario"|"semanal"|"mensal"|"anual"|null quando o usuário disser que se repete ("todo mês", "toda terça", "todo dia 5" = mensal).
 - {"acao":"ver_agenda","data":"YYYY-MM-DD"} — quer ver a agenda de um dia.
 - {"acao":"resumo","mes":"YYYY-MM"} — quer ver resumo/gastos de um mês.
 - {"acao":"add_mercado","itens":[{"nome":str,"qtd":str}]} — itens para a lista do supermercado ("põe leite e pão na lista", "lista: 2kg arroz, café"). qtd "" se não disser.
@@ -410,10 +440,11 @@ function executar(a) {
     const ev = { id: novoId(), titulo: (a.titulo || "Compromisso").trim(), data: a.data, hora,
       lembrar: hora && Number.isFinite(a.lembrar_min) ? a.lembrar_min : null };
     S.eventos.push(ev);
+    const r = FREQ_OK(a.repetir) ? criarRecorrencia("evento", a.repetir, ev) : null;
     const quando = `${dataCurta(ev.data)}${hora ? ` às ${hora}` : ", dia todo"}`;
     return {
-      texto: `Agendado: ${ev.titulo}, ${quando}${ev.lembrar !== null ? `. Lembrete ${textoLembrete(ev.lembrar).toLowerCase()}` : ""}.`,
-      desfazer: () => { S.eventos = S.eventos.filter((e) => e.id !== ev.id); },
+      texto: `Agendado: ${ev.titulo}, ${quando}${r ? `, ${textoFreq(r.freq)}` : ""}${ev.lembrar !== null ? `. Lembrete ${textoLembrete(ev.lembrar).toLowerCase()}` : ""}.`,
+      desfazer: () => { S.eventos = S.eventos.filter((e) => e.id !== ev.id && (!r || e.recId !== r.id)); if (r) S.recorrentes = S.recorrentes.filter((x) => x.id !== r.id); },
     };
   }
   if (a.acao === "add_transacao") {
@@ -425,13 +456,15 @@ function executar(a) {
       banco: S.cfg.bancos.includes(a.banco) ? a.banco : null,
       descricao: (a.descricao || categoria).trim(), data: /^\d{4}-\d{2}-\d{2}$/.test(a.data || "") ? a.data : hojeIso() };
     S.trans.push(t);
+    const rec = FREQ_OK(a.repetir) ? criarRecorrencia("trans", a.repetir === "diario" ? "mensal" : a.repetir, t) : null;
     let texto = `${tipo === "despesa" ? "Gasto" : "Receita"} de ${brl(valor)} em ${categoria}${t.metodo || t.banco ? ` (${[t.metodo, t.banco].filter(Boolean).join(", ")})` : ""}`;
     if (tipo === "despesa") {
       const noMes = S.trans.filter((x) => x.tipo === "despesa" && x.categoria === categoria && x.data.slice(0, 7) === t.data.slice(0, 7))
         .reduce((s, x) => s + x.valor, 0);
       texto += `. ${categoria} no mês: ${brl(noMes)}`;
     }
-    return { texto: texto + ".", desfazer: () => { S.trans = S.trans.filter((x) => x.id !== t.id); } };
+    if (rec) texto += `. Repete ${textoFreq(rec.freq)}`;
+    return { texto: texto + ".", desfazer: () => { S.trans = S.trans.filter((x) => x.id !== t.id && (!rec || x.recId !== rec.id)); if (rec) S.recorrentes = S.recorrentes.filter((x) => x.id !== rec.id); } };
   }
   if (a.acao === "ver_agenda") {
     UI.diaSel = a.data || hojeIso(); UI.mesCal = UI.diaSel.slice(0, 7); UI.filtroAgenda = "dia";
@@ -606,8 +639,8 @@ function listaEventos(evs) {
   return `<ul class="eventos">${evs.map((e) => {
     const passou = e.data < hoje || (e.data === hoje && e.hora && e.hora < hm);
     const meta = [e.hora || "Dia todo", e.lembrar !== null ? `lembrete ${textoLembrete(e.lembrar).toLowerCase()}` : ""].filter(Boolean).join(", ");
-    return `<li class="evento${e.hora ? "" : " livre"}${passou ? " passou" : ""}">
-      <div class="corpo"><div class="titulo">${esc(e.titulo)}</div><div class="meta">${esc(meta)}</div></div>
+    return `<li class="evento${e.hora ? "" : " livre"}${passou ? " passou" : ""}" data-editar-ev="${e.id}">
+      <div class="corpo"><div class="titulo">${e.recId ? '<span class="rep" title="Repete">🔁</span> ' : ""}${esc(e.titulo)}</div><div class="meta">${esc(meta)}</div></div>
       ${botaoApagar("ev", e.id)}</li>`;
   }).join("")}</ul>`;
 }
@@ -992,9 +1025,9 @@ function renderFinancas() {
     ${lista.length ? Object.entries(porDia).map(([d, itens]) => {
       const totalDia = itens.reduce((s, t) => s + (t.tipo === "despesa" ? -t.valor : t.valor), 0);
       return `<div class="dia-cab"><span>${d === hojeIso() ? "Hoje" : d === iso(somaDias(new Date(), -1)) ? "Ontem" : dataCurta(d)}</span><span class="${totalDia < 0 ? "" : "verde"}">${totalDia < 0 ? "−" : "+"}${brl(Math.abs(totalDia))}</span></div>
-      <div class="lista">${itens.map((t) => `<div class="lanc">
+      <div class="lista">${itens.map((t) => `<div class="lanc editavel" data-editar-tr="${t.id}">
         <span class="ico" style="background:${corCat(t.tipo, t.categoria)}26">${(CATEGORIAS[t.tipo][t.categoria] || CATEGORIAS[t.tipo].Outros)[0]}</span>
-        <span><span class="desc">${esc(t.descricao)}</span><br><span class="meta">${t.categoria}${t.metodo ? ` · ${t.metodo}` : ""}${t.banco ? ` · ${esc(t.banco)}` : ""}</span></span>
+        <span><span class="desc">${t.recId ? '<span class="rep" title="Repete">🔁</span> ' : ""}${esc(t.descricao)}</span><br><span class="meta">${t.categoria}${t.metodo ? ` · ${t.metodo}` : ""}${t.banco ? ` · ${esc(t.banco)}` : ""}</span></span>
         <span class="valor ${t.tipo}">${t.tipo === "despesa" ? "−" : "+"}${brl(t.valor)}</span>
         ${botaoApagar("tr", t.id)}</div>`).join("")}</div>`;
     }).join("")
@@ -1005,12 +1038,13 @@ function renderFinancas() {
 /* ================= ajustes: menu com grupos ================= */
 const GRUPOS_AJUSTES = [
   ["personalizar", "🎨", "Personalizar", () => `${nomeTema()}, botões ${(FORMATOS_BOTAO.find(([k]) => k === (S.cfg.botoes || "redondo")) || FORMATOS_BOTAO[0])[1].toLowerCase()}`],
-  ["financas", "💳", "Categorias, bancos e meta", () => {
+  ["financas", "💳", "Categorias, bancos e repetições", () => {
     const n = Object.keys(S.cfg.catExtras.despesa || {}).length + Object.keys(S.cfg.catExtras.receita || {}).length;
     return `${n} ${n === 1 ? "categoria sua" : "categorias suas"}, ${S.cfg.bancos.length} ${S.cfg.bancos.length === 1 ? "banco" : "bancos"}${S.cfg.meta ? `, meta ${brl(S.cfg.meta)}` : ""}`;
   }],
   ["avisos", "🔔", "Lembretes e e-mail", () => `Lembrete ${textoLembrete(S.cfg.lembrete).toLowerCase()}, e-mail ${S.cfg.emailUrl && S.cfg.emailHora ? `às ${S.cfg.emailHora}` : "desligado"}`],
-  ["dados", "🗂️", "Assistente com IA e backup", () => `IA ${S.cfg.gemini ? "ligada" : "desligada"}, backup e restauração`],
+  ["dados", "🗂️", "Assistente com IA e backup", () => { const b = lerStatusSync().backupEm; const d = b ? new Date(b) : null;
+    return `IA ${S.cfg.gemini ? "ligada" : "desligada"}, ${d ? `backup ${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}` : "backup automático desligado"}`; }],
 ];
 
 function cabecalhoGrupo(titulo) {
@@ -1101,7 +1135,7 @@ async function renderAjustes() {
   if (sec === "financas") {
     const tp = UI.ajCatTipo || "despesa";
     const extras = c.catExtras[tp] || {};
-    tela.innerHTML = `${cabecalhoGrupo("Categorias, bancos e meta")}
+    tela.innerHTML = `${cabecalhoGrupo("Categorias, bancos e repetições")}
       <div class="secao" style="margin-top:4px"><h2>Meta de gastos</h2></div>
       <div class="cartao">
         <div class="campo"><label for="cfg-meta">Quanto quer gastar no máximo por mês (R$)</label>
@@ -1126,6 +1160,17 @@ async function renderAjustes() {
         <small class="suave" style="display:block;margin-top:10px;font-size:12.5px">As categorias marcadas como “sua” podem ser renomeadas, trocar emoji e cor, ou apagadas. As padrão ficam sempre disponíveis.</small>
       </div>
 
+      <div class="secao"><h2>Repetições</h2><span class="suave" style="font-size:13px">${S.recorrentes.length || "nenhuma"}</span></div>
+      <div class="cartao">
+        ${S.recorrentes.length ? `<div class="lista-rep">${S.recorrentes.map((r) => {
+          const m = r.modelo, nome = r.alvo === "evento" ? m.titulo : m.descricao;
+          const det = r.alvo === "evento" ? `Compromisso${m.hora ? ` às ${m.hora}` : ""}` : `${m.tipo === "receita" ? "Receita" : "Gasto"} de ${brl(m.valor)}`;
+          return `<div class="item-rep"><span class="ir-ico">${r.alvo === "evento" ? "📅" : m.tipo === "receita" ? "💰" : "💸"}</span>
+            <span class="ir-txt"><b>${esc(nome)}</b><small>${det}, ${textoFreq(r.freq)}, desde ${dataCurta(r.inicio).slice(5)}</small></span>
+            <button type="button" class="btn" data-parar-rep="${r.id}">Parar</button></div>`; }).join("")}</div>`
+          : `<p class="status" style="margin:0">Nada se repete ainda. Ao lançar um gasto, receita ou compromisso, escolha “Repetir: todo mês” (ou escreva “aluguel 900 todo mês”).</p>`}
+      </div>
+
       <div class="secao"><h2>Bancos</h2></div>
       <div class="cartao">
         <div class="lista-bancos">${c.bancos.map((b) => `<span class="chip-banco"><i style="background:${corBanco(b)}"></i>${esc(b)}
@@ -1145,6 +1190,10 @@ async function renderAjustes() {
       const nome = document.getElementById("novo-banco").value.trim(); if (!nome) return;
       if (c.bancos.some((b) => semAcento(b) === semAcento(nome))) { mostrarAviso("Esse banco já está na lista"); return; }
       c.bancos.push(nome); salvar(); render(); mostrarAviso(`${nome} adicionado`);
+    });
+    tela.querySelectorAll("[data-parar-rep]").forEach((b) => b.onclick = () => {
+      if (b.dataset.ok) { pararRecorrencia(Number(b.dataset.pararRep)); salvar(); render(); mostrarAviso("Não repete mais. O que já passou continua salvo."); }
+      else { b.dataset.ok = "1"; b.textContent = "Parar?"; b.classList.add("perigo"); }
     });
     tela.querySelectorAll("[data-del-banco]").forEach((b) => b.onclick = () => {
       if (b.dataset.ok) {
@@ -1255,14 +1304,51 @@ async function renderAjustes() {
         <div class="campo"><label for="cfg-modelo">Modelo</label><input id="cfg-modelo" value="${esc(c.modelo)}"></div>
       </div>
 
-      <div class="secao"><h2>Backup</h2></div>
+      <div class="secao"><h2>Backup automático no Google</h2></div>
       <div class="cartao">
-        <p class="status">Seus dados ficam só neste celular. Copie o backup de vez em quando, principalmente antes de atualizar o app.</p>
+        ${(() => { const st = lerStatusSync();
+          if (!c.emailUrl) return `<p class="status" style="margin:0">Usa o mesmo script do resumo por e-mail. Cole o link dele em <b>Lembretes e e-mail</b> para ligar o backup automático.</p>`;
+          const b = st.backupEm ? new Date(st.backupEm) : null;
+          return `<p class="status">Enquanto você usa o app, uma cópia completa vai para o seu Google (no máximo a cada 30 minutos). Se trocar ou perder o celular, é só instalar o app, colar o link e restaurar.</p>
+            <div class="status-backup ${b ? "ok" : ""}">${b ? `✅ Último backup: <b>${pad(b.getDate())}/${pad(b.getMonth() + 1)} às ${pad(b.getHours())}:${pad(b.getMinutes())}</b>` : "⏳ Ainda não fez o primeiro backup"}</div>
+            <div class="botoes"><button class="btn primario" id="backup-agora">Fazer backup agora</button><button class="btn" id="backup-restaurar">Restaurar do Google</button></div>`; })()}
+      </div>
+
+      <div class="secao"><h2>Backup manual</h2></div>
+      <div class="cartao">
+        <p class="status">Copie o texto e guarde onde quiser, ou cole aqui um backup para restaurar.</p>
         <div class="campo"><textarea id="backup" aria-label="Backup em texto" placeholder="Cole aqui um backup para restaurar"></textarea></div>
         <div class="botoes"><button class="btn primario" id="copiar">Copiar backup</button><button class="btn" id="restaurar">Restaurar</button><button class="btn perigo" id="zerar">Apagar tudo</button></div>
       </div>`;
     ligar("cfg-gemini", "change", (e) => { c.gemini = e.target.value.trim(); salvar(); mostrarAviso(c.gemini ? "Assistente com IA ligado" : "Assistente com IA desligado"); });
     ligar("cfg-modelo", "change", (e) => { c.modelo = e.target.value.trim() || PADRAO().cfg.modelo; salvar(); mostrarAviso("Modelo salvo"); });
+    ligar("backup-agora", "click", async (e) => {
+      e.target.textContent = "Enviando…"; e.target.disabled = true;
+      const st = await sincronizar("backup");
+      e.target.disabled = false;
+      if (st.ok && st.backupScript) { mostrarAviso("Backup salvo no Google"); render(); }
+      else if (st.ok) { e.target.textContent = "Fazer backup agora"; mostrarAviso("Atualize o script do Google para guardar o backup", 4000); }
+      else { e.target.textContent = "Fazer backup agora"; mostrarAviso(`Não deu certo: ${st.erro}`, 4000); }
+    });
+    ligar("backup-restaurar", "click", async (e) => {
+      const btn = e.target;
+      if (!btn.dataset.ok) {
+        btn.textContent = "Buscando…"; btn.disabled = true;
+        try {
+          const j = await buscarBackupGoogle(); UI.backupGoogle = j.backup;
+          const em = new Date(j.em);
+          btn.disabled = false; btn.dataset.ok = "1"; btn.classList.add("perigo");
+          btn.textContent = `Substituir pelos dados de ${pad(em.getDate())}/${pad(em.getMonth() + 1)} às ${pad(em.getHours())}:${pad(em.getMinutes())}?`;
+        } catch (err) { btn.disabled = false; btn.textContent = "Restaurar do Google"; mostrarAviso(err.message, 4000); }
+        return;
+      }
+      const novo = UI.backupGoogle;
+      if (!novo || !Array.isArray(novo.eventos)) { mostrarAviso("Backup inválido"); return; }
+      const link = S.cfg.emailUrl;
+      S = Object.assign(PADRAO(), novo); S.cfg = Object.assign(PADRAO().cfg, S.cfg, { emailUrl: link }); aplicarCategorias(); aplicarTema();
+      S.investimentos = S.investimentos || []; S.mercado = S.mercado || []; S.prioridades = S.prioridades || []; S.histMercado = S.histMercado || {}; S.recorrentes = S.recorrentes || [];
+      UI.backupGoogle = null; salvar(); render(); mostrarAviso("Dados restaurados do Google");
+    });
     ligar("copiar", "click", async () => {
       const txt = JSON.stringify(S);
       document.getElementById("backup").value = txt;
@@ -1274,7 +1360,7 @@ async function renderAjustes() {
         const novo = JSON.parse(document.getElementById("backup").value);
         if (!Array.isArray(novo.eventos) || !Array.isArray(novo.trans)) throw new Error();
         S = Object.assign(PADRAO(), novo); S.cfg = Object.assign(PADRAO().cfg, S.cfg); aplicarCategorias(); aplicarTema();
-        S.investimentos = S.investimentos || []; S.mercado = S.mercado || []; S.prioridades = S.prioridades || []; S.histMercado = S.histMercado || {};
+        S.investimentos = S.investimentos || []; S.mercado = S.mercado || []; S.prioridades = S.prioridades || []; S.histMercado = S.histMercado || {}; S.recorrentes = S.recorrentes || [];
         salvar(); mostrarAviso("Backup restaurado"); render();
       } catch { mostrarAviso("Esse texto não é um backup válido"); }
     });
@@ -1802,6 +1888,65 @@ function abrirFolhaInvest(inv) {
   });
 }
 
+/* ================= repetições ================= */
+const FREQS = [["", "Não repete"], ["diario", "Todo dia"], ["semanal", "Toda semana"], ["mensal", "Todo mês"], ["anual", "Todo ano"]];
+const FREQ_OK = (f) => ["diario", "semanal", "mensal", "anual"].includes(f);
+const textoFreq = (f) => ({ diario: "todo dia", semanal: "toda semana", mensal: "todo mês", anual: "todo ano" })[f] || "";
+S.recorrentes = S.recorrentes || [];
+
+function proximaData(freq, base, inicio) {
+  const d = deIso(base);
+  if (freq === "diario") return iso(somaDias(d, 1));
+  if (freq === "semanal") return iso(somaDias(d, 7));
+  const dia = deIso(inicio).getDate();
+  if (freq === "mensal") {
+    const y = d.getFullYear(), m = d.getMonth() + 1, ult = new Date(y, m + 1, 0).getDate();
+    return iso(new Date(y, m, Math.min(dia, ult)));
+  }
+  const ini = deIso(inicio), y = d.getFullYear() + 1, ult = new Date(y, ini.getMonth() + 1, 0).getDate();
+  return iso(new Date(y, ini.getMonth(), Math.min(dia, ult)));
+}
+
+/* Cria as próximas ocorrências: lançamentos até hoje, compromissos para os próximos 60 dias. */
+function gerarRecorrencias() {
+  let mudou = false;
+  const hoje = hojeIso(), limiteEv = iso(somaDias(new Date(), 60));
+  for (const r of S.recorrentes) {
+    const limite = r.alvo === "evento" ? limiteEv : hoje;
+    let prox = proximaData(r.freq, r.ultimo, r.inicio), n = 0;
+    while (prox <= limite && n < 400) {
+      (r.alvo === "evento" ? S.eventos : S.trans).push({ id: novoId(), ...r.modelo, data: prox, recId: r.id });
+      r.ultimo = prox; prox = proximaData(r.freq, prox, r.inicio); n++; mudou = true;
+    }
+  }
+  return mudou;
+}
+
+function criarRecorrencia(alvo, freq, item) {
+  const { id, data, recId, ...modelo } = item;
+  const r = { id: novoId(), alvo, freq, inicio: data, ultimo: data, modelo };
+  S.recorrentes.push(r);
+  item.recId = r.id;
+  gerarRecorrencias();
+  return r;
+}
+
+/* Para de repetir: mantém o que já aconteceu e apaga os compromissos futuros dessa repetição. */
+function pararRecorrencia(recId, ate) {
+  const r = S.recorrentes.find((x) => x.id === recId);
+  S.recorrentes = S.recorrentes.filter((x) => x.id !== recId);
+  if (r && r.alvo === "evento") { const h = ate && ate > hojeIso() ? ate : hojeIso(); S.eventos = S.eventos.filter((e) => !(e.recId === recId && e.data > h)); }
+  return r;
+}
+
+function acharRepeticao(t) {
+  if (/\btodo dia \d{1,2}\b|\btodo mes\b|\btodos os meses\b|\bmensal(mente)?\b/.test(t)) return "mensal";
+  if (/\btodo dia\b|\btodos os dias\b|\bdiariamente\b/.test(t)) return "diario";
+  if (/\btoda semana\b|\btodas as semanas\b|\bsemanal(mente)?\b|\btoda (segunda|terca|quarta|quinta|sexta)\b|\btodo (sabado|domingo)\b/.test(t)) return "semanal";
+  if (/\btodo ano\b|\btodos os anos\b|\banual(mente)?\b/.test(t)) return "anual";
+  return null;
+}
+
 /* ================= folha de adicionar ================= */
 const folha = document.getElementById("folha"), fundo = document.getElementById("folha-fundo");
 let modoFolha = "evento";
@@ -1815,7 +1960,7 @@ function tileCategoria(tipo, c, ativo) {
 function abrirFolha(modo = "evento", pre = {}) {
   modoFolha = modo; preFolha = pre || {}; desenharFolha();
   folha.hidden = false; fundo.hidden = false;
-  setTimeout(() => {
+  if (!preFolha.editId) setTimeout(() => {
     const alvo = (preFolha.foco && document.getElementById(preFolha.foco)) || folha.querySelector("input");
     alvo?.focus();
     if (alvo && alvo.type === "time" && alvo.showPicker) { try { alvo.showPicker(); } catch { /* sem seletor */ } }
@@ -1833,12 +1978,14 @@ function desenharFolha() {
   const lembretePre = p.lembrar_min !== undefined ? p.lembrar_min : S.cfg.lembrete;
   folha.innerHTML = `
     <div class="alca"></div>
-    <h2 id="folha-titulo">${ehEv ? "Novo compromisso" : tipo === "despesa" ? "Novo gasto" : "Nova receita"}</h2>
+    <h2 id="folha-titulo">${p.editId ? (ehEv ? "Editar compromisso" : tipo === "despesa" ? "Editar gasto" : "Editar receita") : (ehEv ? "Novo compromisso" : tipo === "despesa" ? "Novo gasto" : "Nova receita")}</h2>
     ${p.aviso ? `<p class="aviso-folha">${esc(p.aviso)}</p>` : ""}
+    ${p.editId ? (() => { const r = p.recId && S.recorrentes.find((x) => x.id === p.recId);
+      return r ? `<div class="info-rep"><span>🔁 Repete ${textoFreq(r.freq)}</span><button type="button" id="f-parar">Parar de repetir</button></div>` : ""; })() : `
     <div class="segmento" role="tablist">
       ${[["evento", "Compromisso"], ["despesa", "Gasto"], ["receita", "Receita"]].map(([k, t]) =>
         `<button role="tab" aria-selected="${k === modoFolha}" class="${k === modoFolha ? "ativo" : ""}" data-modo="${k}">${t}</button>`).join("")}
-    </div>
+    </div>`}
     <form id="form-add">
     ${ehEv ? `
       <div class="campo${falta("f-titulo")}"><label for="f-titulo">O que é</label><input id="f-titulo" required placeholder="Reunião na ATI" value="${esc(p.titulo || "")}"></div>
@@ -1849,7 +1996,10 @@ function desenharFolha() {
       <div class="campo"><label for="f-lembrar">Lembrete</label>
         <select id="f-lembrar">${LEMBRETES.map(([v, t]) => `<option value="${v}" ${v === lembretePre ? "selected" : ""}>${t}</option>`).join("")}</select>
         <small>Sem hora, ele entra como tarefa do dia e aparece na agenda da manhã.</small></div>
-      <button class="btn primario largo" type="submit">Salvar compromisso</button>
+      ${p.editId ? "" : `<div class="campo"><label for="f-repetir">Repetir</label>
+        <select id="f-repetir">${FREQS.map(([v, t]) => `<option value="${v}" ${v === (p.repetir || "") ? "selected" : ""}>${t}</option>`).join("")}</select></div>`}
+      <button class="btn primario largo" type="submit">${p.editId ? "Salvar alterações" : "Salvar compromisso"}</button>
+      ${p.editId ? `<button type="button" class="btn perigo largo" id="f-apagar" style="margin-top:8px">Apagar compromisso</button>` : ""}
     ` : `
       <div class="campo valor-grande${falta("f-valor")}"><label for="f-valor">Valor (R$)</label><input id="f-valor" inputmode="decimal" required placeholder="0,00" value="${valorTxt}"></div>
       <div class="campo"><label for="f-desc">Descrição</label><input id="f-desc" placeholder="${tipo === "despesa" ? "Farmácia" : "Salário"}" value="${esc(p.descricao || p.titulo || "")}"></div>
@@ -1869,8 +2019,13 @@ function desenharFolha() {
       ${tipo === "despesa" ? `<div class="campo"><label>Pagamento</label><div class="chips" id="f-met">
         ${METODOS.map((m) => `<button type="button" data-met="${m}" class="${p.metodo === m ? "ativo" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>` : ""}
       ${htmlBancos("f-banco", p.banco || UI.filtroBanco, tipo === "despesa" ? "Saiu de qual banco" : "Entrou em qual banco")}
-      <div class="campo"><label for="f-data">Dia</label><input id="f-data" type="date" required value="${p.data || hojeIso()}"></div>
-      <button class="btn primario largo" type="submit">Salvar ${tipo === "despesa" ? "gasto" : "receita"}</button>
+      <div class="lado">
+        <div class="campo"><label for="f-data">Dia</label><input id="f-data" type="date" required value="${p.data || hojeIso()}"></div>
+        ${p.editId ? "" : `<div class="campo"><label for="f-repetir">Repetir</label>
+          <select id="f-repetir">${FREQS.filter(([v]) => v !== "diario").map(([v, t]) => `<option value="${v}" ${v === (p.repetir === "diario" ? "mensal" : p.repetir || "") ? "selected" : ""}>${t}</option>`).join("")}</select></div>`}
+      </div>
+      <button class="btn primario largo" type="submit">${p.editId ? "Salvar alterações" : `Salvar ${tipo === "despesa" ? "gasto" : "receita"}`}</button>
+      ${p.editId ? `<button type="button" class="btn perigo largo" id="f-apagar" style="margin-top:8px">Apagar ${tipo === "despesa" ? "gasto" : "receita"}</button>` : ""}
     `}
     </form>`;
   const grade = folha.querySelector("#f-cat.grade-cat");
@@ -1910,14 +2065,52 @@ function desenharFolha() {
     if (!((g.id === "f-met" || g.id === "f-banco") && jaAtivo)) b.classList.add("ativo");
   }));
   folha.querySelectorAll(".campo.falta input").forEach((i) => i.addEventListener("input", () => i.closest(".campo").classList.remove("falta"), { once: true }));
+  const parar = document.getElementById("f-parar");
+  if (parar) parar.onclick = (e) => {
+    if (e.target.dataset.ok) { pararRecorrencia(p.recId, p.data); preFolha.recId = null; salvar(); render(); desenharFolha(); mostrarAviso("Não repete mais. O que já passou continua salvo."); }
+    else { e.target.dataset.ok = "1"; e.target.textContent = "Toque de novo para parar"; }
+  };
+  const apagarBtn = document.getElementById("f-apagar");
+  if (apagarBtn) apagarBtn.onclick = (e) => {
+    if (!e.target.dataset.ok) { e.target.dataset.ok = "1"; e.target.textContent = "Toque de novo para apagar"; return; }
+    if (ehEv) S.eventos = S.eventos.filter((x) => x.id !== p.editId); else S.trans = S.trans.filter((x) => x.id !== p.editId);
+    salvar(); fecharFolha(); render(); mostrarAviso("Apagado");
+  };
   document.getElementById("form-add").addEventListener("submit", (e) => {
     e.preventDefault();
+    if (p.editId) {
+      if (ehEv) {
+        const ev = S.eventos.find((x) => x.id === p.editId); if (!ev) return;
+        const hora = document.getElementById("f-hora").value || null, l = document.getElementById("f-lembrar").value;
+        Object.assign(ev, { titulo: document.getElementById("f-titulo").value.trim() || ev.titulo, data: document.getElementById("f-data").value || ev.data,
+          hora, lembrar: hora && l !== "null" ? Number(l) : null });
+      } else {
+        const t = S.trans.find((x) => x.id === p.editId); if (!t) return;
+        const valor = parseValor(document.getElementById("f-valor").value || "");
+        if (!valor) { mostrarAviso("Informe o valor"); return; }
+        Object.assign(t, { valor, descricao: document.getElementById("f-desc").value.trim() || t.descricao,
+          categoria: folha.querySelector("#f-cat .ativo")?.dataset.cat || t.categoria,
+          metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null, banco: folha.querySelector("#f-banco .ativo")?.dataset.banco || null,
+          data: document.getElementById("f-data").value || t.data });
+      }
+      // Se faz parte de uma repetição, as próximas seguem a mudança (o dia continua o da repetição).
+      const item = ehEv ? S.eventos.find((x) => x.id === p.editId) : S.trans.find((x) => x.id === p.editId);
+      const rec = item && item.recId && S.recorrentes.find((x) => x.id === item.recId);
+      if (rec) {
+        const { id, data, recId, ...modelo } = item;
+        rec.modelo = modelo;
+        if (ehEv) S.eventos.forEach((x) => { if (x.recId === rec.id && x.data > item.data) Object.assign(x, modelo); });
+      }
+      salvar(); fecharFolha(); render(); mostrarAviso(rec ? "Salvo. As próximas repetições também mudam." : "Alterações salvas");
+      return;
+    }
+    const repetir = document.getElementById("f-repetir")?.value || "";
     let r;
     if (ehEv) {
       const hora = document.getElementById("f-hora").value || null;
       const l = document.getElementById("f-lembrar").value;
       r = executar({ acao: "add_evento", titulo: document.getElementById("f-titulo").value, data: document.getElementById("f-data").value,
-        hora, lembrar_min: l === "null" ? null : Number(l) });
+        hora, lembrar_min: l === "null" ? null : Number(l), repetir });
     } else {
       const valor = parseValor(document.getElementById("f-valor").value || "");
       if (!valor) { mostrarAviso("Informe o valor"); document.getElementById("f-valor").focus(); return; }
@@ -1925,7 +2118,7 @@ function desenharFolha() {
         descricao: document.getElementById("f-desc").value || folha.querySelector("#f-cat .ativo").dataset.cat,
         categoria: folha.querySelector("#f-cat .ativo").dataset.cat,
         metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null, banco: folha.querySelector("#f-banco .ativo")?.dataset.banco || null,
-        data: document.getElementById("f-data").value });
+        data: document.getElementById("f-data").value, repetir });
     }
     if (r.erro) { mostrarAviso(r.texto); return; }
     if (UI.aba === "hoje") UI.respostas = [r];
@@ -1956,11 +2149,22 @@ folha.addEventListener("click", (e) => {
   const g = (id) => document.getElementById(id)?.value;
   const nome = g("f-titulo") || g("f-desc") || preFolha.titulo || preFolha.descricao || "";
   preFolha = { ...preFolha, titulo: nome, descricao: nome, valor: parseValor(g("f-valor") || "") || preFolha.valor,
-    data: g("f-data") || preFolha.data, hora: g("f-hora") || preFolha.hora, categoria: undefined, aviso: "", foco: b.dataset.modo === "evento" ? "f-hora" : "f-valor" };
+    data: g("f-data") || preFolha.data, hora: g("f-hora") || preFolha.hora, categoria: undefined, aviso: "", repetir: g("f-repetir") || preFolha.repetir, foco: b.dataset.modo === "evento" ? "f-hora" : "f-valor" };
   modoFolha = b.dataset.modo; desenharFolha();
 });
 
 tela.addEventListener("click", (e) => {
+  const linha = e.target.closest("[data-editar-ev], [data-editar-tr]");
+  if (linha && !e.target.closest("button")) {
+    if (linha.dataset.editarEv) {
+      const ev = S.eventos.find((x) => x.id === Number(linha.dataset.editarEv));
+      if (ev) abrirFolha("evento", { editId: ev.id, recId: ev.recId, titulo: ev.titulo, data: ev.data, hora: ev.hora, lembrar_min: ev.lembrar });
+    } else {
+      const t = S.trans.find((x) => x.id === Number(linha.dataset.editarTr));
+      if (t) abrirFolha(t.tipo, { editId: t.id, recId: t.recId, valor: t.valor, descricao: t.descricao, categoria: t.categoria, metodo: t.metodo, banco: t.banco, data: t.data });
+    }
+    return;
+  }
   const b = e.target.closest("button"); if (!b) return;
   const d = b.dataset;
   if (d.ir) { irPara(d.ir); if (d.ajsec) { UI.ajSec = d.ajsec; render(); } }
@@ -2045,11 +2249,12 @@ function mostrarBarras() { document.body.classList.remove("barras-ocultas"); acu
 /* Atualiza a tela quando vira o dia ou quando o app volta do segundo plano. */
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { if (S.cfg.emailUrl) { clearTimeout(timerSync); sincronizar("dados"); } }
-  else if (UI.aba !== "ajustes") render();
+  else { if (gerarRecorrencias()) salvar(); if (UI.aba !== "ajustes") render(); }
 });
 setTimeout(() => { if (S.cfg.emailUrl) sincronizar("dados"); }, 5000);
 setInterval(() => { checarNoNavegador(); }, 30000);
 
+if (gerarRecorrencias()) salvar();
 aplicarTema();
 /* Tela de abertura: 3 segundos com o anel girando */
 setTimeout(() => {
