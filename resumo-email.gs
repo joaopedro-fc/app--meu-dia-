@@ -91,6 +91,9 @@ function montarResumo_(d, agora) {
   const [y, m, dd] = hoje.split('-').map(Number);
   const diaSemana = DIAS_[new Date(Date.UTC(y, m - 1, dd, 15)).getUTCDay()];
   const nome = d.nome ? d.nome.split(' ')[0] : '';
+  // partes escolhidas no app (Ajustes → O que vai no e-mail); o que não vier fica ligado
+  const sec = Object.assign({ agenda: true, amanha: true, proximos: true, financas: true, meta: true, ontem: true,
+    categorias: true, bancos: true, investimentos: true, mercado: true, prioridades: true }, d.secoes || {});
 
   const evHoje = ordenarEventos_(d.eventos.filter((e) => e.data === hoje));
   const evAmanha = ordenarEventos_(d.eventos.filter((e) => e.data === amanha));
@@ -115,35 +118,35 @@ function montarResumo_(d, agora) {
 
   let corpo = '';
   // agenda
-  corpo += secao_('📅 Agenda de hoje', evHoje.length ? tabela_(evHoje.map(linhaEvento_).join('')) : '<div style="font-size:14px;color:#8A879C">Nada marcado. Dia livre!</div>');
-  if (evAmanha.length) corpo += secao_('Amanhã', tabela_(evAmanha.map(linhaEvento_).join('')));
-  if (evSemana.length) corpo += secao_('Próximos dias', tabela_(evSemana.slice(0, 8).map((e) =>
+  if (sec.agenda) corpo += secao_('📅 Agenda de hoje', evHoje.length ? tabela_(evHoje.map(linhaEvento_).join('')) : '<div style="font-size:14px;color:#8A879C">Nada marcado. Dia livre!</div>');
+  if (sec.amanha && evAmanha.length) corpo += secao_('Amanhã', tabela_(evAmanha.map(linhaEvento_).join('')));
+  if (sec.proximos && evSemana.length) corpo += secao_('Próximos dias', tabela_(evSemana.slice(0, 8).map((e) =>
     '<tr><td style="padding:7px 0;border-bottom:1px solid #EEEDF5;width:92px;font-size:13px;color:#8A879C">' + dataCurta_(e.data) + '</td><td style="padding:7px 0;border-bottom:1px solid #EEEDF5;font-size:14px;color:#1D1B2E">' + (e.hora ? '<b>' + e.hora + '</b> ' : '') + esc_(e.titulo) + '</td></tr>').join('')));
 
   // finanças
-  let fin = '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>' +
-    cartaoNumero_('Gastos', brl_(gastos), '#E5534B') + cartaoNumero_('Receitas', brl_(receitas), '#1F9D6B') + cartaoNumero_('Saldo', brl_(receitas - gastos), receitas - gastos < 0 ? '#E5534B' : '#1F9D6B') + '</tr></table>';
-  if (meta) {
+  let fin = sec.financas ? '<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>' +
+    cartaoNumero_('Gastos', brl_(gastos), '#E5534B') + cartaoNumero_('Receitas', brl_(receitas), '#1F9D6B') + cartaoNumero_('Saldo', brl_(receitas - gastos), receitas - gastos < 0 ? '#E5534B' : '#1F9D6B') + '</tr></table>' : '';
+  if (sec.meta && meta) {
     const pct = Math.min(gastos / meta, 1), sobra = meta - gastos;
     fin += '<div style="margin-top:12px;font-size:13px;color:#4A4760">Meta de ' + brl_(meta) + ': <b>' + Math.round((gastos / meta) * 100) + '%</b> usada. ' +
       (sobra > 0 ? 'Dá pra gastar até <b>' + brl_(sobra / diasRestantes) + '</b> por dia.' : 'Passou <b style="color:#E5534B">' + brl_(-sobra) + '</b> da meta.') + '</div>' +
       '<div style="height:8px;background:#EEEDF5;border-radius:4px;margin-top:6px;overflow:hidden"><div style="height:8px;width:' + Math.round(pct * 100) + '%;background:' + (sobra < 0 ? '#E5534B' : ROXO) + '"></div></div>';
   }
-  if (gastoOntem) fin += '<div style="margin-top:10px;font-size:13px;color:#4A4760">Ontem você gastou <b>' + brl_(gastoOntem) + '</b>.</div>';
-  if (cats.length) fin += '<div style="margin-top:12px">' + tabela_(cats.map(([c, v]) =>
+  if (sec.ontem && gastoOntem) fin += '<div style="margin-top:10px;font-size:13px;color:#4A4760">Ontem você gastou <b>' + brl_(gastoOntem) + '</b>.</div>';
+  if (sec.categorias && cats.length) fin += '<div style="margin-top:12px">' + tabela_(cats.map(([c, v]) =>
     '<tr><td style="padding:5px 0;font-size:13px;color:#1D1B2E">' + esc_(c) + '</td><td style="padding:5px 0;font-size:13px;color:#4A4760;text-align:right">' + brl_(v) + ' · ' + Math.round((v / gastos) * 100) + '%</td></tr>').join('')) + '</div>';
   const bancos = Object.keys(porBanco);
-  if (bancos.length) fin += '<div style="margin-top:8px;font-size:13px;color:#8A879C">Gastos por banco: ' + bancos.map((b) => esc_(b) + ' ' + brl_(porBanco[b])).join(' · ') + '</div>';
-  corpo += secao_('💸 Finanças de ' + MESES_[m - 1], fin);
+  if (sec.bancos && bancos.length) fin += '<div style="margin-top:8px;font-size:13px;color:#8A879C">Gastos por banco: ' + bancos.map((b) => esc_(b) + ' ' + brl_(porBanco[b])).join(' · ') + '</div>';
+  if (fin) corpo += secao_('💸 Finanças de ' + MESES_[m - 1], fin.replace(/^<div style="margin-top:\d+px/, '<div style="margin-top:0'));
 
   // investimentos
-  if (inv.length) corpo += secao_('🐷 Investimentos', '<div style="font-size:22px;font-weight:800;color:#1D1B2E">' + brl_(totInv) + '</div>' +
+  if (sec.investimentos && inv.length) corpo += secao_('🐷 Investimentos', '<div style="font-size:22px;font-weight:800;color:#1D1B2E">' + brl_(totInv) + '</div>' +
     '<div style="font-size:13px;color:#8A879C;margin-top:2px">' + Object.keys(invBanco).map((b) => esc_(b) + ' ' + brl_(invBanco[b])).join(' · ') + '</div>');
 
   // listas
-  if (d.mercado.length) corpo += secao_('🛒 Lista do mercado (' + d.mercado.length + ')', '<div style="font-size:14px;color:#1D1B2E;line-height:1.7">' +
+  if (sec.mercado && d.mercado.length) corpo += secao_('🛒 Lista do mercado (' + d.mercado.length + ')', '<div style="font-size:14px;color:#1D1B2E;line-height:1.7">' +
     d.mercado.slice(0, 20).map((i) => '• ' + (i.qtd ? '<b>' + esc_(i.qtd) + '</b> ' : '') + esc_(i.nome)).join('<br>') + (d.mercado.length > 20 ? '<br>…e mais ' + (d.mercado.length - 20) : '') + '</div>');
-  if (d.prioridades.length) {
+  if (sec.prioridades && d.prioridades.length) {
     const ordem = { alta: 0, media: 1, baixa: 2 }, nomes = { alta: 'Alta', media: 'Média', baixa: 'Baixa' }, cores = { alta: '#E5534B', media: '#D9901A', baixa: '#2F80ED' };
     const l = d.prioridades.slice().sort((a, b) => ordem[a.prioridade] - ordem[b.prioridade] || a.preco - b.preco);
     const tot = l.reduce((s, p) => s + (p.preco || 0), 0);
@@ -160,14 +163,18 @@ function montarResumo_(d, agora) {
     '<div style="font-size:12px;color:#A3A0B5">Enviado pelo Meu Dia' + (atualizado ? ' · dados de ' + Utilities.formatDate(atualizado, FUSO, "dd/MM 'às' HH:mm") : '') + '</div>';
 
   const titulo = 'Bom dia' + (nome ? ', ' + esc_(nome) : '') + '!';
-  const sub = evHoje.length ? 'Você tem ' + evHoje.length + ' compromisso' + (evHoje.length > 1 ? 's' : '') + ' hoje.' : 'Seu dia está livre hoje.';
+  const sub = !sec.agenda ? 'Seu resumo do dia.' : evHoje.length ? 'Você tem ' + evHoje.length + ' compromisso' + (evHoje.length > 1 ? 's' : '') + ' hoje.' : 'Seu dia está livre hoje.';
   const html = '<div style="background:#F1F0F7;padding:20px 10px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif">' +
     '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:18px;overflow:hidden">' +
     '<tr><td style="background:#14121F;padding:22px 24px"><div style="font-size:13px;color:#B9B1F0">' + diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1) + ', ' + dd + ' de ' + MESES_[m - 1] + '</div>' +
     '<div style="font-size:24px;font-weight:800;color:#FFFFFF;margin-top:4px">' + titulo + '</div><div style="font-size:14px;color:#D9D6EA;margin-top:4px">' + sub + '</div></td></tr>' +
     corpo + '<tr><td style="padding:22px 24px 24px">' + rodape + '</td></tr></table></div>';
-  const assunto = '☀️ Meu Dia · ' + diaSemana + ', ' + String(dd).padStart(2, '0') + '/' + String(m).padStart(2, '0') + ' · ' +
-    (evHoje.length ? evHoje.length + ' compromisso' + (evHoje.length > 1 ? 's' : '') : 'dia livre') + ' · gastos do mês ' + brl_(gastos);
+  const partesAssunto = [];
+  if (sec.agenda) partesAssunto.push(evHoje.length ? evHoje.length + ' compromisso' + (evHoje.length > 1 ? 's' : '') : 'dia livre');
+  if (sec.financas) partesAssunto.push('gastos do mês ' + brl_(gastos));
+  const assunto = '☀️ Meu Dia · ' + diaSemana + ', ' + String(dd).padStart(2, '0') + '/' + String(m).padStart(2, '0') +
+    (partesAssunto.length ? ' · ' + partesAssunto.join(' · ') : '');
+  if (!corpo) corpo = secao_('Tudo desligado', '<div style="font-size:14px;color:#8A879C">Você desligou todas as partes do resumo. Ligue o que quiser no app, em Ajustes → O que vai no e-mail.</div>');
   return { assunto, html };
 }
 

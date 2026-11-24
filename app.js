@@ -39,6 +39,13 @@ function aplicarCategorias() {
     CATEGORIAS[tipo] = { ...base, ...(ex[tipo] || {}), Outros };
   }
 }
+const SECOES_EMAIL = [
+  ["Agenda", [["agenda", "Compromissos de hoje"], ["amanha", "Compromissos de amanhã"], ["proximos", "Próximos 7 dias"]]],
+  ["Finanças", [["financas", "Gastos, receitas e saldo do mês"], ["meta", "Meta de gastos"], ["ontem", "Quanto gastei ontem"], ["categorias", "Gastos por categoria"], ["bancos", "Gastos por banco"]]],
+  ["Investimentos", [["investimentos", "Total guardado por banco"]]],
+  ["Listas", [["mercado", "Lista do mercado"], ["prioridades", "Prioridades de compra"]]],
+];
+const secaoLigada = (k) => (S.cfg.emailSecoes || {})[k] !== false;
 const DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
   "setembro", "outubro", "novembro", "dezembro"];
@@ -49,7 +56,7 @@ const LEMBRETES = [[null, "Sem lembrete"], [0, "Na hora"], [10, "10 min antes"],
 const CHAVE = "meudia_v1";
 const PADRAO = () => ({
   seq: 1, eventos: [], trans: [], mercado: [], prioridades: [], histMercado: {}, investimentos: [],
-  cfg: { emailUrl: "", emailHora: "06:30", nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
+  cfg: { emailUrl: "", emailHora: "06:30", emailSecoes: {}, nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
 });
 let S;
 try { S = Object.assign(PADRAO(), JSON.parse(localStorage.getItem(CHAVE) || "null") || {}); }
@@ -75,7 +82,8 @@ function dadosResumo() {
   const agora = new Date(), ontem = iso(somaDias(agora, -1)), limite = iso(somaDias(agora, 31));
   const mesAt = mesIso(agora), mesAnt = mesIso(new Date(agora.getFullYear(), agora.getMonth() - 1, 1));
   return {
-    versao: 1, nome: S.cfg.nome, meta: Number(S.cfg.meta) || 0, atualizado: agora.toISOString(),
+    versao: 2, nome: S.cfg.nome, meta: Number(S.cfg.meta) || 0, atualizado: agora.toISOString(),
+    secoes: Object.fromEntries(SECOES_EMAIL.flatMap(([, itens]) => itens.map(([k]) => [k, secaoLigada(k)]))),
     eventos: S.eventos.filter((e) => e.data >= ontem && e.data <= limite).map(({ titulo, data, hora }) => ({ titulo, data, hora })),
     mercado: (S.mercado || []).filter((i) => !i.feito).map(({ nome, qtd, secao }) => ({ nome, qtd, secao })),
     prioridades: (S.prioridades || []).filter((p) => !p.comprado).map(({ nome, preco, prioridade }) => ({ nome, preco, prioridade })),
@@ -1032,6 +1040,13 @@ async function renderAjustes() {
       <div class="botoes"><button class="btn" id="email-teste">Enviar e-mail de teste agora</button></div>
     </div>
 
+    <div class="secao"><h2>O que vai no e-mail</h2></div>
+    <div class="cartao secoes-email">
+      ${SECOES_EMAIL.map(([grupo, itens]) => `<div class="rot-cat">${grupo}</div>
+        ${itens.map(([k, rotulo]) => `<label class="chave-linha"><span>${rotulo}</span>
+          <input type="checkbox" class="interruptor" data-secao-email="${k}" ${secaoLigada(k) ? "checked" : ""}></label>`).join("")}`).join("")}
+    </div>
+
     <div class="secao"><h2>Assistente com IA</h2></div>
     <div class="cartao">
       <div class="campo"><label for="cfg-gemini">Chave da API do Gemini (opcional)</label>
@@ -1081,6 +1096,11 @@ async function renderAjustes() {
       : `Não deu certo: ${st.erro}`, 3500);
     if (UI.aba === "ajustes") render();
   });
+  tela.querySelectorAll("[data-secao-email]").forEach((ch) => ch.addEventListener("change", () => {
+    c.emailSecoes = { ...(c.emailSecoes || {}), [ch.dataset.secaoEmail]: ch.checked };
+    salvar();
+    mostrarAviso(c.emailUrl ? "E-mail atualizado" : "Salvo. Cole o link do resumo para ativar o e-mail.");
+  }));
   document.getElementById("email-teste").onclick = async (e) => {
     c.emailUrl = document.getElementById("cfg-email").value.trim();
     if (!c.emailUrl) { mostrarAviso("Cole o link do resumo primeiro"); return; }
