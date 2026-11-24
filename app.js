@@ -49,7 +49,7 @@ const LEMBRETES = [[null, "Sem lembrete"], [0, "Na hora"], [10, "10 min antes"],
 const CHAVE = "meudia_v1";
 const PADRAO = () => ({
   seq: 1, eventos: [], trans: [], mercado: [], prioridades: [], histMercado: {}, investimentos: [],
-  cfg: { emailUrl: "", nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
+  cfg: { emailUrl: "", emailHora: "06:30", nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
 });
 let S;
 try { S = Object.assign(PADRAO(), JSON.parse(localStorage.getItem(CHAVE) || "null") || {}); }
@@ -91,10 +91,10 @@ async function sincronizar(acao = "dados") {
   let st;
   try {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ acao, dados: dadosResumo() }) });
+      body: JSON.stringify({ acao, dados: dadosResumo(), horario: S.cfg.emailHora || "" }) });
     let j = {};
     try { j = await r.json(); } catch { j = { ok: r.ok || (r.status >= 300 && r.status < 400) }; } // o Google responde com redirecionamento depois de salvar
-    st = j.ok ? { ok: true, em: new Date().toISOString() } : { ok: false, em: new Date().toISOString(), erro: j.erro || `HTTP ${r.status}` };
+    st = j.ok ? { ok: true, em: new Date().toISOString(), horario: typeof j.horario === "string" ? j.horario : lerStatusSync().horario } : { ok: false, em: new Date().toISOString(), erro: j.erro || `HTTP ${r.status}` };
   } catch (e) {
     st = { ok: false, em: new Date().toISOString(), erro: "Sem conexão com o link" };
   }
@@ -1019,11 +1019,16 @@ async function renderAjustes() {
 
     <div class="secao"><h2>Resumo por e-mail</h2></div>
     <div class="cartao">
-      <p class="status">Todo dia por volta das 6:30 você recebe no seu Gmail a agenda do dia, as listas e como andam as finanças. Precisa do link do seu script do Google (veja o passo a passo).</p>
+      <p class="status">Todo dia, no horário escolhido abaixo, você recebe no seu Gmail a agenda do dia, as listas e como andam as finanças. Precisa do link do seu script do Google.</p>
       <div class="campo"><label for="cfg-email">Link do resumo</label>
         <input id="cfg-email" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec?chave=…" value="${esc(c.emailUrl)}"></div>
+      <div class="campo"><label for="cfg-email-hora">Horário do e-mail</label>
+        <input id="cfg-email-hora" type="time" value="${esc(c.emailHora || "")}">
+        <small>O Google envia com até 15 minutos de diferença. Deixe vazio para parar de receber.</small></div>
       <div class="status" id="status-email">${(() => { const st = lerStatusSync(); if (!c.emailUrl) return "Desligado."; if (!st.em) return "Ainda não sincronizou.";
-        const h = new Date(st.em); return st.ok ? `Sincronizado em <b>${pad(h.getDate())}/${pad(h.getMonth() + 1)} às ${pad(h.getHours())}:${pad(h.getMinutes())}</b>.` : `Falhou: <b>${esc(st.erro)}</b>.`; })()}</div>
+        const h = new Date(st.em);
+        const hora = st.horario === undefined ? "" : st.horario ? ` E-mail programado para <b>${esc(st.horario)}</b>.` : " Envio diário <b>desligado</b>.";
+        return st.ok ? `Sincronizado em <b>${pad(h.getDate())}/${pad(h.getMonth() + 1)} às ${pad(h.getHours())}:${pad(h.getMinutes())}</b>.${hora}` : `Falhou: <b>${esc(st.erro)}</b>.`; })()}</div>
       <div class="botoes"><button class="btn" id="email-teste">Enviar e-mail de teste agora</button></div>
     </div>
 
@@ -1050,6 +1055,7 @@ async function renderAjustes() {
     c.meta = parseValor(document.getElementById("cfg-meta").value) || 0;
     c.gemini = document.getElementById("cfg-gemini").value.trim();
     c.emailUrl = document.getElementById("cfg-email").value.trim();
+    c.emailHora = document.getElementById("cfg-email-hora").value;
     c.modelo = document.getElementById("cfg-modelo").value.trim() || PADRAO().cfg.modelo;
     salvar();
   };
@@ -1065,6 +1071,16 @@ async function renderAjustes() {
   const rem = document.getElementById("foto-remover");
   if (rem) rem.onclick = () => { c.foto = ""; salvar(); render(); mostrarAviso("Foto removida"); };
   tela.querySelectorAll("[data-cor]").forEach((b) => b.onclick = () => { c.cor = b.dataset.cor; aplicarTema(); salvar(); render(); mostrarAviso("Cor atualizada"); });
+  document.getElementById("cfg-email-hora").addEventListener("change", async () => {
+    c.emailHora = document.getElementById("cfg-email-hora").value;
+    try { localStorage.setItem(CHAVE, JSON.stringify(S)); } catch { /* ignora */ }
+    if (!c.emailUrl) { mostrarAviso("Horário salvo. Cole o link do resumo para ativar."); return; }
+    mostrarAviso("Atualizando o horário…");
+    const st = await sincronizar("dados");
+    mostrarAviso(st.ok ? (st.horario ? `E-mail programado para ${st.horario}` : (c.emailHora ? "Horário salvo. Atualize o script para ele valer." : "Envio diário desligado"))
+      : `Não deu certo: ${st.erro}`, 3500);
+    if (UI.aba === "ajustes") render();
+  });
   document.getElementById("email-teste").onclick = async (e) => {
     c.emailUrl = document.getElementById("cfg-email").value.trim();
     if (!c.emailUrl) { mostrarAviso("Cole o link do resumo primeiro"); return; }
