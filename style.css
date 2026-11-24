@@ -538,3 +538,59 @@ body.barras-ocultas #aviso { bottom: calc(24px + var(--seg-baixo)); }
 .interruptor::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--suave); transition: transform .2s, background .2s; }
 .interruptor:checked { background: var(--roxo); border-color: var(--roxo); }
 .interruptor:checked::after { transform: translateX(18px); background: var(--fundo); }
+
+/* ================= ajustes em grupos ================= */
+.aj-topo { margin: 2px 0 6px; }
+.aj-voltar { display: inline-flex; align-items: center; gap: 2px; color: var(--roxo); font-weight: 700; font-size: 15px; padding: 6px 8px 6px 0; }
+.aj-voltar svg { width: 20px; height: 20px; stroke: currentColor; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.aj-titulo { margin: 0 2px 14px; }
+.perfil-card { width: 100%; display: flex; align-items: center; gap: 14px; text-align: left; background: var(--acento-fundo); border: 1px solid var(--acento-borda); border-radius: 22px; padding: 14px; }
+.perfil-card > div:nth-child(2) { flex: 1; min-width: 0; }
+.pc-nome { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.pc-sub { font-size: 13px; color: var(--acento-texto); font-weight: 600; }
+.menu-aj { margin-top: 14px; background: var(--cartao); border-radius: var(--raio); padding: 4px 6px; }
+.item-aj { width: 100%; display: flex; align-items: center; gap: 14px; padding: 13px 8px; text-align: left; border-bottom: 1px solid var(--linha); }
+.item-aj:last-child { border-bottom: 0; }
+.ia-ico { width: 42px; height: 42px; border-radius: 14px; background: var(--cartao-2); display: grid; place-items: center; font-size: 21px; flex: none; }
+.ia-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ia-tit { font-weight: 750; font-size: 15.5px; }
+.ia-sub { font-size: 12.5px; color: var(--suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seta-dir svg { width: 18px; height: 18px; stroke: var(--suave); stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.aj-rodape { text-align: center; font-size: 12px; color: var(--suave); margin-top: 22px; }
+
+.emojis-perfil { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.emojis-perfil button { aspect-ratio: 1; border-radius: 12px; font-size: 20px; display: grid; place-items: center; background: var(--fundo); font-weight: 800; color: var(--roxo); border: 1.5px solid transparent; }
+.emojis-perfil button.ativo { border-color: var(--roxo); background: var(--acento-fundo); }
+.grade-cores { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; justify-items: center; }
+.grade-cores button { width: 40px; height: 40px; }
+.cor-livre { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px; border-radius: 16px; background: var(--fundo); border: 1.5px solid transparent; cursor: pointer; position: relative; }
+.cor-livre.ativo { border-color: var(--roxo); }
+.cor-livre input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.cor-livre span { flex: 1; display: grid; gap: 1px; }
+.cor-livre b { font-size: 14.5px; font-weight: 700; }
+.cor-livre small { font-size: 12.5px; color: var(--suave); }
+.cor-livre i { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--cartao-2); background: conic-gradient(#FF6B6B, #FFD43B, #3DDC97, #22D3EE, #8E7CFF, #FF6FA8, #FF6B6B); }
+.formatos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.formatos button { display: grid; justify-items: center; gap: 8px; padding: 14px 4px 10px; background: var(--fundo); border: 1.5px solid transparent; border-radius: 16px; font-size: 13px; font-weight: 700; color: var(--suave); }
+.formatos button.ativo { border-color: var(--roxo); color: var(--texto); background: var(--acento-fundo); }
+.amostra { width: 64px; height: 26px; background: var(--roxo); display: block; }
+.amostra-redondo { border-radius: 13px; } .amostra-suave { border-radius: 8px; } .amostra-reto { border-radius: 3px; }
+
+.tile-cat { position: relative; }
+.tile-tag { position: absolute; top: 5px; right: 5px; font-size: 9.5px; font-weight: 800; background: var(--roxo); color: var(--fundo); padding: 1px 5px; border-radius: 6px; }
+.tile-cat.propria { border-color: var(--linha); }
+.previa-linha { display: flex; justify-content: center; margin: -2px 0 14px; }
+.previa-linha .tile-cat { width: 96px; }
+.emojis-cat.grande { max-height: 168px; overflow-y: auto; }
+.input-emoji { margin-top: 8px; background: var(--fundo); border: 1px solid var(--linha); border-radius: 12px; padding: 10px 12px; outline: none; width: 100%; }
+.form-cat .input-emoji { background: var(--cartao); margin-top: 0; }
+.input-emoji:focus { border-color: var(--roxo); }
+.cor-mini { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--cartao-2); color: var(--texto); font-weight: 800; position: relative; cursor: pointer; overflow: hidden; border: 1px dashed var(--suave); }
+.cor-mini input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+
+/* ================= formato dos botões ================= */
+body.botoes-suave { --raio-b: 12px; --raio-b-peq: 10px; }
+body.botoes-reto { --raio-b: 6px; --raio-b-peq: 5px; }
+body.botoes-suave :is(.btn, .btn-lancar, .filtros button, .chips button, .heroi-acoes button, .add-linha, .add-linha button, .opcoes-resp button, .tag, .entrada form, .entrada form button, .abas .mais, .icone-btn, .seletor-mes, .seletor-mes button, .chip-banco, .resposta .marca, .apagar.confirmar),
+body.botoes-reto :is(.btn, .btn-lancar, .filtros button, .chips button, .heroi-acoes button, .add-linha, .add-linha button, .opcoes-resp button, .tag, .entrada form, .entrada form button, .abas .mais, .icone-btn, .seletor-mes, .seletor-mes button, .chip-banco, .resposta .marca, .apagar.confirmar) { border-radius: var(--raio-b); }
+body.botoes-suave :is(.segmento, .segmento button, .tile-cat, .emojis-perfil button, .formatos button), body.botoes-reto :is(.segmento, .segmento button, .tile-cat, .emojis-perfil button, .formatos button) { border-radius: var(--raio-b-peq); }

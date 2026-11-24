@@ -23,15 +23,44 @@ const TEMAS = {
   laranja: ["#FF9F43", "#33230F", "#553A17", "#FFCF9C", "#45300F"],
 };
 const AVATARES = ["", "😎", "🧑‍💻", "🚀", "🎧", "⚡", "🌵", "☕"];
+const EMOJIS_TODOS = ["😎", "🧑‍💻", "🚀", "🎧", "⚡", "🌵", "☕", "😀", "😄", "🤓", "🥳", "😇", "🤠", "🦁", "🐯", "🐼", "🦊", "🐶", "🐱", "🐸",
+  "🦉", "🐢", "🦖", "🌻", "🌙", "⭐", "🔥", "🌊", "🍀", "🌈", "🎮", "⚽", "🏀", "🎸", "🎨", "📚", "💡", "🧠", "🏆", "💎", "👑", "🤖", "👾", "🎯",
+  "🍕", "🍔", "🍩", "🍺", "✈️", "🚗", "🏠", "💼", "💻", "📱", "🎵", "🎁", "🧾", "💰", "🏦", "🛠️", "🌱", "❤️", "💜", "💚", "🐾", "👶", "💄", "🏋️", "🧘"];
+const CORES_APP = { roxo: "#8E7CFF", azul: "#5B9BFF", verde: "#3DDC97", rosa: "#FF6FA8", laranja: "#FF9F43", vermelho: "#FF6B6B",
+  amarelo: "#FFD43B", ciano: "#22D3EE", lilas: "#C084FC", menta: "#6EE7B7", indigo: "#7C8CFF", dourado: "#E3B341" };
+const NOMES_COR = { roxo: "Roxo", azul: "Azul", verde: "Verde", rosa: "Rosa", laranja: "Laranja", vermelho: "Vermelho", amarelo: "Amarelo",
+  ciano: "Ciano", lilas: "Lilás", menta: "Menta", indigo: "Índigo", dourado: "Dourado" };
+const FORMATOS_BOTAO = [["redondo", "Redondo"], ["suave", "Arredondado"], ["reto", "Quadrado"]];
+function misturar(h1, h2, t) {
+  const c = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const a = c(h1), b = c(h2);
+  return "#" + a.map((v, i) => Math.round(v * (1 - t) + b[i] * t).toString(16).padStart(2, "0")).join("");
+}
+function luminancia(h) { const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+function temaDeCor(hex) {
+  let a = /^#[0-9a-f]{6}$/i.test(hex) ? hex.toLowerCase() : "#8e7cff";
+  for (let i = 0; i < 8 && luminancia(a) < 0.42; i++) a = misturar(a, "#ffffff", 0.15); // garante contraste com o texto escuro dos botões
+  return [a, misturar(a, "#0E1116", 0.82), misturar(a, "#0E1116", 0.68), misturar(a, "#ffffff", 0.45), misturar(a, "#0E1116", 0.75)];
+}
+function corAcento() { const c = S.cfg.cor; return CORES_APP[c] || (/^#/.test(c || "") ? c : CORES_APP.roxo); }
+function nomeTema() { return NOMES_COR[S.cfg.cor] || "Cor personalizada"; }
 function aplicarTema() {
-  const [a, f, b, t, r] = TEMAS[S.cfg.cor] || TEMAS.roxo, st = document.documentElement.style;
+  const c = S.cfg.cor, [a, f, b, t, r] = TEMAS[c] || temaDeCor(corAcento()), st = document.documentElement.style;
   st.setProperty("--roxo", a); st.setProperty("--acento-fundo", f); st.setProperty("--acento-borda", b);
   st.setProperty("--acento-texto", t); st.setProperty("--roxo-escuro", r);
+  document.body.classList.remove("botoes-suave", "botoes-reto");
+  if (S.cfg.botoes === "suave" || S.cfg.botoes === "reto") document.body.classList.add(`botoes-${S.cfg.botoes}`);
+}
+function primeiroEmoji(txt) {
+  const t = String(txt || "").trim();
+  if (!t) return "";
+  try { return [...new Intl.Segmenter("pt", { granularity: "grapheme" }).segment(t)][0].segment; } catch { return [...t][0]; }
 }
 const METODOS = ["débito", "crédito", "pix", "dinheiro"];
 const CATEGORIAS_BASE = JSON.parse(JSON.stringify(CATEGORIAS));
-const EMOJIS_CAT = ["🐶", "🎮", "✈️", "💄", "🍺", "⚽", "🎁", "🧾", "🚗", "👶", "💻", "🏋️", "📱", "🎵", "🌱", "💼", "🏦", "🎨", "🛠️", "❤️"];
-const CORES_CAT = ["#8E7CFF", "#5EE6A8", "#FFD166", "#FF7B72", "#5DB8FF", "#FF79C6", "#4FD1C5", "#FFB454"];
+const EMOJIS_CAT = ["🐶", "🎮", "✈️", "💄", "🍺", "⚽", "🎁", "🧾", "🚗", "👶", "💻", "🏋️", "📱", "🎵", "🌱", "💼", "🏦", "🎨", "🛠️", "❤️",
+  "🐱", "🍕", "☕", "📚", "🎬", "🏥", "🧴", "👕", "💍", "🎓", "🚲", "⛽", "🏖️", "🎤", "🧸", "🪴", "🔧", "📦", "💳", "🙏"];
+const CORES_CAT = ["#8E7CFF", "#5EE6A8", "#FFD166", "#FF7B72", "#5DB8FF", "#FF79C6", "#4FD1C5", "#FFB454", "#C084FC", "#22D3EE", "#E3B341", "#A3E635"];
 function aplicarCategorias() {
   const ex = (S && S.cfg && S.cfg.catExtras) || { despesa: {}, receita: {} };
   for (const tipo of ["despesa", "receita"]) {
@@ -56,7 +85,7 @@ const LEMBRETES = [[null, "Sem lembrete"], [0, "Na hora"], [10, "10 min antes"],
 const CHAVE = "meudia_v1";
 const PADRAO = () => ({
   seq: 1, eventos: [], trans: [], mercado: [], prioridades: [], histMercado: {}, investimentos: [],
-  cfg: { emailUrl: "", emailHora: "06:30", emailSecoes: {}, nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
+  cfg: { botoes: "redondo", emailUrl: "", emailHora: "06:30", emailSecoes: {}, nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
 });
 let S;
 try { S = Object.assign(PADRAO(), JSON.parse(localStorage.getItem(CHAVE) || "null") || {}); }
@@ -551,6 +580,7 @@ const somaGastos = (pred) => S.trans.filter((t) => t.tipo === "despesa" && pred(
 
 const entradaFixa = document.getElementById("entrada-fixa");
 function irPara(aba) {
+  if (aba === "ajustes" && UI.aba !== "ajustes") UI.ajSec = null;
   UI.aba = aba; UI.confirmar = null;
   mostrarBarras();
   document.querySelectorAll(".abas [data-aba]").forEach((b) => b.classList.toggle("ativa", b.dataset.aba === aba));
@@ -685,7 +715,7 @@ function renderHoje() {
   tela.innerHTML = `
     <header class="topo">
       <div class="topo-esq">
-        <button class="avatar" data-ir="ajustes" aria-label="Personalizar">${avatarHtml()}</button>
+        <button class="avatar" data-ir="ajustes" data-ajsec="personalizar" aria-label="Personalizar">${avatarHtml()}</button>
         <div><div class="data">${dataTxt}</div><h1>${saudacao()}</h1></div>
       </div>
       <button class="icone-btn" data-ir="ajustes" aria-label="Ajustes">${ICONE_AJUSTES}</button>
@@ -720,7 +750,7 @@ function renderHoje() {
       <div class="cartao stat"><div class="rot">Gastos do mês</div><div class="val coral">${brl(gastoMes)}</div><div class="det">${brl(gastoHoje)} hoje</div></div>
       <div class="cartao stat"><div class="rot">Saldo</div><div class="val ${saldo < 0 ? "coral" : "verde"}">${brl(saldo)}</div><div class="det">${brl(receitaMes)} de receitas</div></div>
     </div>
-    <button class="dica-meta" data-ir="ajustes">Definir uma meta de gastos para o mês</button>`}
+    <button class="dica-meta" data-ir="ajustes" data-ajsec="financas">Definir uma meta de gastos para o mês</button>`}
 
     ${cats.length ? `<div class="cartao" style="margin-top:10px"><div class="rot suave" style="font-size:13px;font-weight:500">Gastos por categoria</div>${blocoCategorias(cats, gastoMes)}</div>` : ""}
 
@@ -972,208 +1002,342 @@ function renderFinancas() {
   `;
 }
 
+/* ================= ajustes: menu com grupos ================= */
+const GRUPOS_AJUSTES = [
+  ["personalizar", "🎨", "Personalizar", () => `${nomeTema()}, botões ${(FORMATOS_BOTAO.find(([k]) => k === (S.cfg.botoes || "redondo")) || FORMATOS_BOTAO[0])[1].toLowerCase()}`],
+  ["financas", "💳", "Categorias, bancos e meta", () => {
+    const n = Object.keys(S.cfg.catExtras.despesa || {}).length + Object.keys(S.cfg.catExtras.receita || {}).length;
+    return `${n} ${n === 1 ? "categoria sua" : "categorias suas"}, ${S.cfg.bancos.length} ${S.cfg.bancos.length === 1 ? "banco" : "bancos"}${S.cfg.meta ? `, meta ${brl(S.cfg.meta)}` : ""}`;
+  }],
+  ["avisos", "🔔", "Lembretes e e-mail", () => `Lembrete ${textoLembrete(S.cfg.lembrete).toLowerCase()}, e-mail ${S.cfg.emailUrl && S.cfg.emailHora ? `às ${S.cfg.emailHora}` : "desligado"}`],
+  ["dados", "🗂️", "Assistente com IA e backup", () => `IA ${S.cfg.gemini ? "ligada" : "desligada"}, backup e restauração`],
+];
+
+function cabecalhoGrupo(titulo) {
+  return `<div class="aj-topo"><button class="aj-voltar" data-aj="" aria-label="Voltar para Ajustes">${ICONE_ESQ}<span>Ajustes</span></button></div>
+    <h1 class="aj-titulo">${titulo}</h1>`;
+}
+const ligar = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); return el; };
+
 async function renderAjustes() {
-  const c = S.cfg;
-  tela.innerHTML = `
-    <div class="mes-nav"><h1>Ajustes</h1></div>
-    <div class="secao" style="margin-top:6px"><h2>Personalizar</h2></div>
-    <div class="cartao">
-      <div class="campo"><label for="cfg-nome">Seu nome</label><input id="cfg-nome" value="${esc(c.nome)}" placeholder="João"></div>
-      <div class="campo"><label>Foto do perfil</label>
-        <div class="perfil-foto">
-          <div class="avatar grande">${avatarHtml()}</div>
-          <div class="botoes">
-            <label class="btn primario" for="foto-arquivo">${c.foto ? "Trocar foto" : "Escolher foto"}</label>
-            ${c.foto ? `<button type="button" class="btn" id="foto-remover">Remover</button>` : ""}
-          </div>
-          <input type="file" id="foto-arquivo" accept="image/*" hidden>
-        </div>
-        <small>Ou use um emoji:</small>
-        <div class="avatares">${AVATARES.map((a) =>
-          `<button type="button" data-avatar="${a}" class="${!c.foto && (c.avatar || "") === a ? "ativo" : ""}" aria-label="${a || "Iniciais"}">${a || esc(iniciais())}</button>`).join("")}</div></div>
-      <div class="campo"><label>Cor do app</label><div class="cores">${Object.entries(TEMAS).map(([k, v]) =>
-        `<button type="button" data-cor="${k}" class="${c.cor === k ? "ativo" : ""}" style="background:${v[0]}" aria-label="${k}"></button>`).join("")}</div></div>
-      <div class="campo"><label for="cfg-meta">Meta de gastos por mês (R$)</label><input id="cfg-meta" inputmode="decimal" value="${c.meta ? String(c.meta).replace(".", ",") : ""}" placeholder="2.000,00">
-        <small>Aparece na tela inicial com quanto ainda dá pra gastar por dia. Deixe vazio para não usar.</small></div>
-    </div>
-
-    <div class="secao"><h2>Suas categorias</h2></div>
-    <div class="cartao">
-      <p class="status">Crie categorias suas na hora de lançar um gasto ou receita, no botão “+ Nova”. Elas aparecem aqui.</p>
-      ${["despesa", "receita"].map((tp) => { const ex = Object.entries(c.catExtras[tp] || {});
-        return ex.length ? `<div class="rot-cat">${tp === "despesa" ? "Gastos" : "Receitas"}</div><div class="lista-bancos">${ex.map(([n, [e, cor]]) =>
-          `<span class="chip-banco"><span>${e}</span>${esc(n)}<button type="button" data-del-cat="${tp}|${esc(n)}" aria-label="Remover ${esc(n)}">✕</button></span>`).join("")}</div>` : ""; }).join("")
-        || `<span class="suave">Nenhuma categoria criada ainda.</span>`}
-    </div>
-
-    <div class="secao"><h2>Seus bancos</h2></div>
-    <div class="cartao">
-      <p class="status">Usados para separar gastos, receitas e investimentos por banco em Finanças.</p>
-      <div class="chips chips-banco lista-bancos">${c.bancos.map((b) => `<span class="chip-banco"><i style="background:${corBanco(b)}"></i>${esc(b)}
-        <button type="button" data-del-banco="${esc(b)}" aria-label="Remover ${esc(b)}">✕</button></span>`).join("") || `<span class="suave">Nenhum banco cadastrado.</span>`}</div>
-      <form class="add-linha" id="form-banco" style="margin-top:12px"><input id="novo-banco" placeholder="Adicionar banco: Nubank, Inter…" autocomplete="off">
-        <button type="submit" aria-label="Adicionar banco">${svg('<path d="M12 5v14M5 12h14"/>')}</button></form>
-    </div>
-
-    <div class="secao"><h2>Lembretes</h2></div>
-    <div class="cartao">
-      <div class="campo"><label for="cfg-lembrete">Lembrete padrão para compromissos com hora</label>
-        <select id="cfg-lembrete">${LEMBRETES.map(([v, t]) => `<option value="${v}" ${v === c.lembrete ? "selected" : ""}>${t}</option>`).join("")}</select></div>
-      <div class="campo"><label for="cfg-resumo">Agenda do dia por notificação</label>
-        <input id="cfg-resumo" type="time" value="${c.resumo}"><small>Deixe vazio para não receber.</small></div>
-      <div id="status-notif" class="status"></div>
-      <div class="botoes"><button class="btn" id="testar">Testar notificação</button><button class="btn primario" id="exato" hidden>Permitir horário exato</button></div>
-    </div>
-
-    <div class="secao"><h2>Resumo por e-mail</h2></div>
-    <div class="cartao">
-      <p class="status">Todo dia, no horário escolhido abaixo, você recebe no seu Gmail a agenda do dia, as listas e como andam as finanças. Precisa do link do seu script do Google.</p>
-      <div class="campo"><label for="cfg-email">Link do resumo</label>
-        <input id="cfg-email" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec?chave=…" value="${esc(c.emailUrl)}"></div>
-      <div class="campo"><label for="cfg-email-hora">Horário do e-mail</label>
-        <input id="cfg-email-hora" type="time" value="${esc(c.emailHora || "")}">
-        <small>O Google envia com até 15 minutos de diferença. Deixe vazio para parar de receber.</small></div>
-      <div class="status" id="status-email">${(() => { const st = lerStatusSync(); if (!c.emailUrl) return "Desligado."; if (!st.em) return "Ainda não sincronizou.";
-        const h = new Date(st.em);
-        const hora = st.horario === undefined ? "" : st.horario ? ` E-mail programado para <b>${esc(st.horario)}</b>.` : " Envio diário <b>desligado</b>.";
-        return st.ok ? `Sincronizado em <b>${pad(h.getDate())}/${pad(h.getMonth() + 1)} às ${pad(h.getHours())}:${pad(h.getMinutes())}</b>.${hora}` : `Falhou: <b>${esc(st.erro)}</b>.`; })()}</div>
-      <div class="botoes"><button class="btn" id="email-teste">Enviar e-mail de teste agora</button></div>
-    </div>
-
-    <div class="secao"><h2>O que vai no e-mail</h2></div>
-    <div class="cartao secoes-email">
-      ${SECOES_EMAIL.map(([grupo, itens]) => `<div class="rot-cat">${grupo}</div>
-        ${itens.map(([k, rotulo]) => `<label class="chave-linha"><span>${rotulo}</span>
-          <input type="checkbox" class="interruptor" data-secao-email="${k}" ${secaoLigada(k) ? "checked" : ""}></label>`).join("")}`).join("")}
-    </div>
-
-    <div class="secao"><h2>Assistente com IA</h2></div>
-    <div class="cartao">
-      <div class="campo"><label for="cfg-gemini">Chave da API do Gemini (opcional)</label>
-        <input id="cfg-gemini" type="password" autocomplete="off" value="${esc(c.gemini)}" placeholder="Cole sua chave aqui">
-        <small>Com a chave, você escreve do seu jeito e lança várias coisas numa frase. Pegue grátis em aistudio.google.com.</small></div>
-      <div class="campo"><label for="cfg-modelo">Modelo</label><input id="cfg-modelo" value="${esc(c.modelo)}"></div>
-    </div>
-
-    <div class="secao"><h2>Backup</h2></div>
-    <div class="cartao">
-      <p class="status">Seus dados ficam só neste celular. Copie o backup de vez em quando.</p>
-      <div class="campo"><textarea id="backup" aria-label="Backup em texto" placeholder="Cole aqui um backup para restaurar"></textarea></div>
-      <div class="botoes"><button class="btn" id="copiar">Copiar backup</button><button class="btn" id="restaurar">Restaurar</button><button class="btn perigo" id="zerar">Apagar tudo</button></div>
-    </div>
-  `;
-  const salvarCfg = () => {
-    const l = document.getElementById("cfg-lembrete").value;
-    c.lembrete = l === "null" ? null : Number(l);
-    c.resumo = document.getElementById("cfg-resumo").value;
-    c.nome = document.getElementById("cfg-nome").value.trim();
-    c.meta = parseValor(document.getElementById("cfg-meta").value) || 0;
-    c.gemini = document.getElementById("cfg-gemini").value.trim();
-    c.emailUrl = document.getElementById("cfg-email").value.trim();
-    c.emailHora = document.getElementById("cfg-email-hora").value;
-    c.modelo = document.getElementById("cfg-modelo").value.trim() || PADRAO().cfg.modelo;
-    salvar();
-  };
-  ["cfg-nome", "cfg-meta", "cfg-email", "cfg-lembrete", "cfg-resumo", "cfg-gemini", "cfg-modelo"].forEach((id) => document.getElementById(id).addEventListener("change", () => { salvarCfg(); mostrarAviso("Ajustes salvos"); }));
-
-  tela.querySelectorAll("[data-avatar]").forEach((b) => b.onclick = () => { c.avatar = b.dataset.avatar; c.foto = ""; salvar(); render(); mostrarAviso("Perfil atualizado"); });
-  document.getElementById("foto-arquivo").onchange = async (e) => {
-    const arq = e.target.files && e.target.files[0];
-    if (!arq) return;
-    try { c.foto = await carregarFoto(arq); salvar(); render(); mostrarAviso("Foto atualizada"); }
-    catch { mostrarAviso("Não deu pra abrir essa imagem. Tente outra."); }
-  };
-  const rem = document.getElementById("foto-remover");
-  if (rem) rem.onclick = () => { c.foto = ""; salvar(); render(); mostrarAviso("Foto removida"); };
-  tela.querySelectorAll("[data-cor]").forEach((b) => b.onclick = () => { c.cor = b.dataset.cor; aplicarTema(); salvar(); render(); mostrarAviso("Cor atualizada"); });
-  document.getElementById("cfg-email-hora").addEventListener("change", async () => {
-    c.emailHora = document.getElementById("cfg-email-hora").value;
-    try { localStorage.setItem(CHAVE, JSON.stringify(S)); } catch { /* ignora */ }
-    if (!c.emailUrl) { mostrarAviso("Horário salvo. Cole o link do resumo para ativar."); return; }
-    mostrarAviso("Atualizando o horário…");
-    const st = await sincronizar("dados");
-    mostrarAviso(st.ok ? (st.horario ? `E-mail programado para ${st.horario}` : (c.emailHora ? "Horário salvo. Atualize o script para ele valer." : "Envio diário desligado"))
-      : `Não deu certo: ${st.erro}`, 3500);
-    if (UI.aba === "ajustes") render();
-  });
-  tela.querySelectorAll("[data-secao-email]").forEach((ch) => ch.addEventListener("change", () => {
-    c.emailSecoes = { ...(c.emailSecoes || {}), [ch.dataset.secaoEmail]: ch.checked };
-    salvar();
-    mostrarAviso(c.emailUrl ? "E-mail atualizado" : "Salvo. Cole o link do resumo para ativar o e-mail.");
-  }));
-  document.getElementById("email-teste").onclick = async (e) => {
-    c.emailUrl = document.getElementById("cfg-email").value.trim();
-    if (!c.emailUrl) { mostrarAviso("Cole o link do resumo primeiro"); return; }
-    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(c.emailUrl)) { mostrarAviso("Esse link não parece ser do Google Apps Script"); return; }
-    salvar(); e.target.textContent = "Enviando…"; e.target.disabled = true;
-    const st = await sincronizar("teste");
-    e.target.textContent = "Enviar e-mail de teste agora"; e.target.disabled = false;
-    mostrarAviso(st.ok ? "E-mail de teste enviado. Confira seu Gmail." : `Não deu certo: ${st.erro}`, 4000);
-    if (UI.aba === "ajustes") render();
-  };
-  document.getElementById("form-banco").onsubmit = (e) => {
-    e.preventDefault();
-    const nome = document.getElementById("novo-banco").value.trim();
-    if (!nome) return;
-    if (c.bancos.some((b) => semAcento(b) === semAcento(nome))) { mostrarAviso("Esse banco já está na lista"); return; }
-    c.bancos.push(nome); salvar(); render(); mostrarAviso(`${nome} adicionado`);
-  };
-  tela.querySelectorAll("[data-del-cat]").forEach((b) => b.onclick = () => {
-    if (b.dataset.ok) {
-      const [tp, n] = b.dataset.delCat.split("|");
-      delete c.catExtras[tp][n]; aplicarCategorias(); salvar(); render(); mostrarAviso("Categoria removida. Os lançamentos antigos continuam salvos.");
-    } else { b.dataset.ok = "1"; b.textContent = "Remover?"; b.classList.add("confirmar"); }
-  });
-  tela.querySelectorAll("[data-del-banco]").forEach((b) => b.onclick = () => {
-    if (b.dataset.ok) {
-      c.bancos = c.bancos.filter((x) => x !== b.dataset.delBanco);
-      if (UI.filtroBanco === b.dataset.delBanco) UI.filtroBanco = null;
-      salvar(); render(); mostrarAviso("Banco removido. Os lançamentos antigos continuam salvos.");
-    } else { b.dataset.ok = "1"; b.textContent = "Remover?"; b.classList.add("confirmar"); }
-  });
-  document.getElementById("testar").onclick = async () => {
-    if (ehNativo()) {
-      await LN().schedule({ notifications: [{ id: 1999999, title: "Meu Dia", body: "As notificações estão funcionando.", channelId: "lembretes", schedule: { at: new Date(Date.now() + 3000) } }] });
-      mostrarAviso("Notificação em 3 segundos");
-    } else if ("Notification" in window) {
-      try {
-        const p = await Notification.requestPermission();
-        if (p === "granted") new Notification("Meu Dia", { body: "As notificações estão funcionando." });
-        else mostrarAviso("Notificações bloqueadas no navegador");
-      } catch { mostrarAviso("Este navegador não permite notificações aqui"); }
-    }
-  };
-  document.getElementById("copiar").onclick = async () => {
-    const txt = JSON.stringify(S);
-    document.getElementById("backup").value = txt;
-    try { await navigator.clipboard.writeText(txt); mostrarAviso("Backup copiado"); }
-    catch { mostrarAviso("Backup no campo acima. Selecione e copie."); }
-  };
-  document.getElementById("restaurar").onclick = () => {
-    try {
-      const novo = JSON.parse(document.getElementById("backup").value);
-      if (!Array.isArray(novo.eventos) || !Array.isArray(novo.trans)) throw new Error();
-      S = Object.assign(PADRAO(), novo); S.cfg = Object.assign(PADRAO().cfg, S.cfg); aplicarCategorias(); S.investimentos = S.investimentos || []; S.mercado = S.mercado || []; S.prioridades = S.prioridades || []; S.histMercado = S.histMercado || {}; salvar(); mostrarAviso("Backup restaurado"); render();
-    } catch { mostrarAviso("Esse texto não é um backup válido"); }
-  };
-  document.getElementById("zerar").onclick = (e) => {
-    if (e.target.dataset.ok) { S = PADRAO(); aplicarCategorias(); salvar(); mostrarAviso("Tudo apagado"); render(); }
-    else { e.target.dataset.ok = "1"; e.target.textContent = "Toque de novo para apagar"; }
-  };
-
-  const st = document.getElementById("status-notif");
-  if (ehNativo()) {
-    const ln = LN();
-    const p = await ln.checkPermissions();
-    exatoPermitido = (await ln.checkExactNotificationSetting()).exact_alarm === "granted";
-    const pend = (await ln.getPending()).notifications.length;
-    st.innerHTML = `Notificações <b>${p.display === "granted" ? "permitidas" : "bloqueadas"}</b>, horário exato <b>${exatoPermitido ? "ativo" : "desativado"}</b>, <b>${pend}</b> agendadas.`;
-    const bx = document.getElementById("exato");
-    bx.hidden = exatoPermitido;
-    bx.onclick = async () => { await ln.changeExactNotificationSetting(); };
-  } else {
-    st.textContent = "Prévia no navegador: os avisos só aparecem com esta página aberta. No app instalado, chegam mesmo com ele fechado.";
+  const c = S.cfg, sec = UI.ajSec;
+  if (!sec) {
+    tela.innerHTML = `
+      <div class="mes-nav"><h1>Ajustes</h1></div>
+      <button class="perfil-card" data-aj="personalizar">
+        <div class="avatar grande">${avatarHtml()}</div>
+        <div><div class="pc-nome">${esc(c.nome || "Seu nome")}</div><div class="pc-sub">Foto, cor e estilo do app</div></div>
+        <span class="seta-dir">${ICONE_DIR}</span>
+      </button>
+      <div class="menu-aj">${GRUPOS_AJUSTES.map(([k, ico, tit, resumo]) => `
+        <button class="item-aj" data-aj="${k}"><span class="ia-ico">${ico}</span>
+          <span class="ia-txt"><span class="ia-tit">${tit}</span><span class="ia-sub">${esc(resumo())}</span></span>
+          <span class="seta-dir">${ICONE_DIR}</span></button>`).join("")}</div>
+      <p class="aj-rodape">Meu Dia · seus dados ficam só neste celular</p>`;
+    return;
   }
+
+  /* ---------- personalizar ---------- */
+  if (sec === "personalizar") {
+    const corAtual = corAcento(), personal = !CORES_APP[c.cor];
+    tela.innerHTML = `${cabecalhoGrupo("Personalizar")}
+      <div class="cartao">
+        <div class="campo"><label for="cfg-nome">Seu nome</label><input id="cfg-nome" value="${esc(c.nome)}" placeholder="João"></div>
+        <div class="campo"><label>Foto do perfil</label>
+          <div class="perfil-foto"><div class="avatar grande">${avatarHtml()}</div>
+            <div class="botoes"><label class="btn primario" for="foto-arquivo">${c.foto ? "Trocar foto" : "Escolher foto"}</label>
+              ${c.foto ? `<button type="button" class="btn" id="foto-remover">Remover</button>` : ""}</div>
+            <input type="file" id="foto-arquivo" accept="image/*" hidden></div></div>
+      </div>
+
+      <div class="secao"><h2>Emoji do perfil</h2><span class="suave" style="font-size:13px">em vez da foto</span></div>
+      <div class="cartao">
+        <div class="emojis-perfil">
+          <button type="button" data-avatar="" class="${!c.foto && !c.avatar ? "ativo" : ""}" aria-label="Iniciais">${esc(iniciais())}</button>
+          ${EMOJIS_TODOS.map((e) => `<button type="button" data-avatar="${e}" class="${!c.foto && c.avatar === e ? "ativo" : ""}">${e}</button>`).join("")}
+        </div>
+        <form class="add-linha" id="form-emoji" style="margin-top:12px">
+          <input id="emoji-livre" placeholder="Ou cole qualquer emoji aqui 🙂" autocomplete="off" maxlength="16">
+          <button type="submit" aria-label="Usar emoji">${ICONE_OK}</button></form>
+      </div>
+
+      <div class="secao"><h2>Cor do app</h2><span class="suave" style="font-size:13px">${esc(nomeTema())}</span></div>
+      <div class="cartao">
+        <div class="cores grade-cores">${Object.entries(CORES_APP).map(([k, v]) =>
+          `<button type="button" data-cor="${k}" class="${c.cor === k ? "ativo" : ""}" style="background:${v}" aria-label="${NOMES_COR[k]}"></button>`).join("")}</div>
+        <label class="cor-livre${personal ? " ativo" : ""}"><input type="color" id="cor-livre" value="${corAtual}"><span><b>Escolher outra cor</b><small>Qualquer cor da paleta</small></span>
+          <i style="background:${corAtual}"></i></label>
+      </div>
+
+      <div class="secao"><h2>Formato dos botões</h2></div>
+      <div class="cartao">
+        <div class="formatos">${FORMATOS_BOTAO.map(([k, nome]) => `<button type="button" data-formato="${k}" class="${(c.botoes || "redondo") === k ? "ativo" : ""}">
+          <span class="amostra amostra-${k}"></span><span>${nome}</span></button>`).join("")}</div>
+        <small class="suave" style="display:block;margin-top:10px;font-size:12.5px">Muda o formato de todos os botões, filtros, do campo de escrever e do botão +.</small>
+      </div>`;
+    ligar("cfg-nome", "change", (e) => { c.nome = e.target.value.trim(); salvar(); mostrarAviso("Nome salvo"); });
+    ligar("foto-arquivo", "change", async (e) => {
+      const arq = e.target.files && e.target.files[0]; if (!arq) return;
+      try { c.foto = await carregarFoto(arq); salvar(); render(); mostrarAviso("Foto atualizada"); }
+      catch { mostrarAviso("Não deu pra abrir essa imagem. Tente outra."); }
+    });
+    ligar("foto-remover", "click", () => { c.foto = ""; salvar(); render(); mostrarAviso("Foto removida"); });
+    tela.querySelectorAll("[data-avatar]").forEach((b) => b.onclick = () => { c.avatar = b.dataset.avatar; c.foto = ""; salvar(); render(); mostrarAviso("Perfil atualizado"); });
+    ligar("form-emoji", "submit", (e) => {
+      e.preventDefault();
+      const em = primeiroEmoji(document.getElementById("emoji-livre").value);
+      if (!em || /^[\p{L}\p{N}\s]$/u.test(em)) { mostrarAviso("Cole um emoji"); return; }
+      c.avatar = em; c.foto = ""; salvar(); render(); mostrarAviso("Perfil atualizado");
+    });
+    tela.querySelectorAll("[data-cor]").forEach((b) => b.onclick = () => { c.cor = b.dataset.cor; aplicarTema(); salvar(); render(); mostrarAviso(`Cor ${NOMES_COR[c.cor].toLowerCase()}`); });
+    const corLivre = document.getElementById("cor-livre");
+    corLivre.addEventListener("input", () => { c.cor = corLivre.value; aplicarTema(); corLivre.nextElementSibling.nextElementSibling.style.background = corLivre.value; });
+    corLivre.addEventListener("change", () => { c.cor = corLivre.value; aplicarTema(); salvar(); render(); mostrarAviso("Cor personalizada salva"); });
+    tela.querySelectorAll("[data-formato]").forEach((b) => b.onclick = () => { c.botoes = b.dataset.formato; aplicarTema(); salvar(); render(); mostrarAviso("Formato dos botões atualizado"); });
+    return;
+  }
+
+  /* ---------- categorias, bancos e meta ---------- */
+  if (sec === "financas") {
+    const tp = UI.ajCatTipo || "despesa";
+    const extras = c.catExtras[tp] || {};
+    tela.innerHTML = `${cabecalhoGrupo("Categorias, bancos e meta")}
+      <div class="secao" style="margin-top:4px"><h2>Meta de gastos</h2></div>
+      <div class="cartao">
+        <div class="campo"><label for="cfg-meta">Quanto quer gastar no máximo por mês (R$)</label>
+          <input id="cfg-meta" inputmode="decimal" value="${c.meta ? String(c.meta).replace(".", ",") : ""}" placeholder="2.000,00">
+          <small>Aparece na tela inicial com quanto ainda dá pra gastar por dia. Deixe vazio para não usar.</small></div>
+      </div>
+
+      <div class="secao"><h2>Categorias</h2><span class="suave" style="font-size:13px">toque nas suas para editar</span></div>
+      <div class="segmento seg-listas" role="tablist" style="margin-bottom:10px">
+        <button role="tab" data-aj-cat="despesa" class="${tp === "despesa" ? "ativo" : ""}">💸 Gastos</button>
+        <button role="tab" data-aj-cat="receita" class="${tp === "receita" ? "ativo" : ""}">💰 Receitas</button>
+      </div>
+      <div class="cartao">
+        <div class="grade-cat">
+          ${Object.keys(CATEGORIAS[tp]).map((cat) => {
+            const propria = !!extras[cat];
+            return `<button type="button" class="tile-cat${propria ? " propria" : ""}" data-editar-cat="${propria ? esc(cat) : ""}" data-padrao="${propria ? "" : esc(cat)}" style="--cor:${CATEGORIAS[tp][cat][1]}">
+              <span class="tile-ico" style="background:${CATEGORIAS[tp][cat][1]}26">${CATEGORIAS[tp][cat][0]}</span><span class="tile-nome">${esc(cat)}</span>${propria ? `<span class="tile-tag">sua</span>` : ""}</button>`;
+          }).join("")}
+          <button type="button" class="tile-cat nova" data-nova-cat="1"><span class="tile-ico">+</span><span class="tile-nome">Nova</span></button>
+        </div>
+        <small class="suave" style="display:block;margin-top:10px;font-size:12.5px">As categorias marcadas como “sua” podem ser renomeadas, trocar emoji e cor, ou apagadas. As padrão ficam sempre disponíveis.</small>
+      </div>
+
+      <div class="secao"><h2>Bancos</h2></div>
+      <div class="cartao">
+        <div class="lista-bancos">${c.bancos.map((b) => `<span class="chip-banco"><i style="background:${corBanco(b)}"></i>${esc(b)}
+          <button type="button" data-del-banco="${esc(b)}" aria-label="Remover ${esc(b)}">✕</button></span>`).join("") || `<span class="suave">Nenhum banco cadastrado.</span>`}</div>
+        <form class="add-linha" id="form-banco" style="margin-top:12px"><input id="novo-banco" placeholder="Adicionar banco: Nubank, Inter…" autocomplete="off">
+          <button type="submit" aria-label="Adicionar banco">${svg('<path d="M12 5v14M5 12h14"/>')}</button></form>
+      </div>`;
+    ligar("cfg-meta", "change", (e) => { c.meta = parseValor(e.target.value) || 0; salvar(); mostrarAviso(c.meta ? `Meta de ${brl(c.meta)} salva` : "Meta desligada"); });
+    tela.querySelectorAll("[data-aj-cat]").forEach((b) => b.onclick = () => { UI.ajCatTipo = b.dataset.ajCat; render(); });
+    tela.querySelectorAll("[data-editar-cat]").forEach((b) => b.onclick = () => {
+      if (b.dataset.editarCat) abrirFolhaCategoria(tp, b.dataset.editarCat);
+      else mostrarAviso(`${b.dataset.padrao} é uma categoria padrão`);
+    });
+    tela.querySelector("[data-nova-cat]").onclick = () => abrirFolhaCategoria(tp, null);
+    ligar("form-banco", "submit", (e) => {
+      e.preventDefault();
+      const nome = document.getElementById("novo-banco").value.trim(); if (!nome) return;
+      if (c.bancos.some((b) => semAcento(b) === semAcento(nome))) { mostrarAviso("Esse banco já está na lista"); return; }
+      c.bancos.push(nome); salvar(); render(); mostrarAviso(`${nome} adicionado`);
+    });
+    tela.querySelectorAll("[data-del-banco]").forEach((b) => b.onclick = () => {
+      if (b.dataset.ok) {
+        c.bancos = c.bancos.filter((x) => x !== b.dataset.delBanco);
+        if (UI.filtroBanco === b.dataset.delBanco) UI.filtroBanco = null;
+        salvar(); render(); mostrarAviso("Banco removido. Os lançamentos antigos continuam salvos.");
+      } else { b.dataset.ok = "1"; b.textContent = "Remover?"; b.classList.add("confirmar"); }
+    });
+    return;
+  }
+
+  /* ---------- lembretes e e-mail ---------- */
+  if (sec === "avisos") {
+    tela.innerHTML = `${cabecalhoGrupo("Lembretes e e-mail")}
+      <div class="secao" style="margin-top:4px"><h2>Lembretes</h2></div>
+      <div class="cartao">
+        <div class="campo"><label for="cfg-lembrete">Lembrete padrão para compromissos com hora</label>
+          <select id="cfg-lembrete">${LEMBRETES.map(([v, t]) => `<option value="${v}" ${v === c.lembrete ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+        <div class="campo"><label for="cfg-resumo">Agenda do dia por notificação</label>
+          <input id="cfg-resumo" type="time" value="${c.resumo}"><small>Deixe vazio para não receber.</small></div>
+        <div id="status-notif" class="status"></div>
+        <div class="botoes"><button class="btn" id="testar">Testar notificação</button><button class="btn primario" id="exato" hidden>Permitir horário exato</button></div>
+      </div>
+
+      <div class="secao"><h2>Resumo por e-mail</h2></div>
+      <div class="cartao">
+        <div class="campo"><label for="cfg-email">Link do resumo (Google Apps Script)</label>
+          <input id="cfg-email" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.emailUrl)}"></div>
+        <div class="campo"><label for="cfg-email-hora">Horário do e-mail</label>
+          <input id="cfg-email-hora" type="time" value="${esc(c.emailHora || "")}">
+          <small>O Google envia com até 15 minutos de diferença. Deixe vazio para parar de receber.</small></div>
+        <div class="status" id="status-email">${(() => { const st = lerStatusSync(); if (!c.emailUrl) return "Desligado."; if (!st.em) return "Ainda não sincronizou.";
+          const h = new Date(st.em);
+          const hora = st.horario === undefined ? "" : st.horario ? ` E-mail programado para <b>${esc(st.horario)}</b>.` : " Envio diário <b>desligado</b>.";
+          return st.ok ? `Sincronizado em <b>${pad(h.getDate())}/${pad(h.getMonth() + 1)} às ${pad(h.getHours())}:${pad(h.getMinutes())}</b>.${hora}` : `Falhou: <b>${esc(st.erro)}</b>.`; })()}</div>
+        <div class="botoes"><button class="btn" id="email-teste">Enviar e-mail de teste agora</button></div>
+      </div>
+
+      <div class="secao"><h2>O que vai no e-mail</h2></div>
+      <div class="cartao secoes-email">
+        ${SECOES_EMAIL.map(([grupo, itens]) => `<div class="rot-cat">${grupo}</div>
+          ${itens.map(([k, rotulo]) => `<label class="chave-linha"><span>${rotulo}</span>
+            <input type="checkbox" class="interruptor" data-secao-email="${k}" ${secaoLigada(k) ? "checked" : ""}></label>`).join("")}`).join("")}
+      </div>`;
+    ligar("cfg-lembrete", "change", (e) => { c.lembrete = e.target.value === "null" ? null : Number(e.target.value); salvar(); mostrarAviso("Lembrete padrão salvo"); });
+    ligar("cfg-resumo", "change", (e) => { c.resumo = e.target.value; salvar(); mostrarAviso(c.resumo ? `Agenda do dia às ${c.resumo}` : "Agenda do dia desligada"); });
+    ligar("cfg-email", "change", (e) => { c.emailUrl = e.target.value.trim(); salvar(); mostrarAviso("Link salvo"); });
+    ligar("cfg-email-hora", "change", async () => {
+      c.emailHora = document.getElementById("cfg-email-hora").value;
+      try { localStorage.setItem(CHAVE, JSON.stringify(S)); } catch { /* ignora */ }
+      if (!c.emailUrl) { mostrarAviso("Horário salvo. Cole o link do resumo para ativar."); return; }
+      mostrarAviso("Atualizando o horário…");
+      const st = await sincronizar("dados");
+      mostrarAviso(st.ok ? (st.horario ? `E-mail programado para ${st.horario}` : (c.emailHora ? "Horário salvo. Atualize o script para ele valer." : "Envio diário desligado"))
+        : `Não deu certo: ${st.erro}`, 3500);
+      if (UI.aba === "ajustes") render();
+    });
+    tela.querySelectorAll("[data-secao-email]").forEach((ch) => ch.addEventListener("change", () => {
+      c.emailSecoes = { ...(c.emailSecoes || {}), [ch.dataset.secaoEmail]: ch.checked };
+      salvar(); mostrarAviso(c.emailUrl ? "E-mail atualizado" : "Salvo. Cole o link do resumo para ativar o e-mail.");
+    }));
+    ligar("email-teste", "click", async (e) => {
+      c.emailUrl = document.getElementById("cfg-email").value.trim();
+      if (!c.emailUrl) { mostrarAviso("Cole o link do resumo primeiro"); return; }
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(c.emailUrl)) { mostrarAviso("Esse link não parece ser do Google Apps Script"); return; }
+      salvar(); e.target.textContent = "Enviando…"; e.target.disabled = true;
+      const st = await sincronizar("teste");
+      e.target.textContent = "Enviar e-mail de teste agora"; e.target.disabled = false;
+      mostrarAviso(st.ok ? "E-mail de teste enviado. Confira seu Gmail." : `Não deu certo: ${st.erro}`, 4000);
+      if (UI.aba === "ajustes") render();
+    });
+    ligar("testar", "click", async () => {
+      if (ehNativo()) {
+        await LN().schedule({ notifications: [{ id: 1999999, title: "Meu Dia", body: "As notificações estão funcionando.", channelId: "lembretes", schedule: { at: new Date(Date.now() + 3000) } }] });
+        mostrarAviso("Notificação em 3 segundos");
+      } else if ("Notification" in window) {
+        try {
+          const p = await Notification.requestPermission();
+          if (p === "granted") new Notification("Meu Dia", { body: "As notificações estão funcionando." });
+          else mostrarAviso("Notificações bloqueadas no navegador");
+        } catch { mostrarAviso("Este navegador não permite notificações aqui"); }
+      }
+    });
+    const st = document.getElementById("status-notif");
+    if (ehNativo()) {
+      const ln = LN();
+      const p = await ln.checkPermissions();
+      exatoPermitido = (await ln.checkExactNotificationSetting()).exact_alarm === "granted";
+      const pend = (await ln.getPending()).notifications.length;
+      st.innerHTML = `Notificações <b>${p.display === "granted" ? "permitidas" : "bloqueadas"}</b>, horário exato <b>${exatoPermitido ? "ativo" : "desativado"}</b>, <b>${pend}</b> agendadas.`;
+      const bx = document.getElementById("exato");
+      bx.hidden = exatoPermitido;
+      bx.onclick = async () => { await ln.changeExactNotificationSetting(); };
+    } else {
+      st.textContent = "Prévia no navegador: os avisos só aparecem com esta página aberta. No app instalado, chegam mesmo com ele fechado.";
+    }
+    return;
+  }
+
+  /* ---------- assistente com IA e backup ---------- */
+  if (sec === "dados") {
+    tela.innerHTML = `${cabecalhoGrupo("Assistente com IA e backup")}
+      <div class="secao" style="margin-top:4px"><h2>Assistente com IA</h2></div>
+      <div class="cartao">
+        <div class="campo"><label for="cfg-gemini">Chave da API do Gemini (opcional)</label>
+          <input id="cfg-gemini" type="password" autocomplete="off" value="${esc(c.gemini)}" placeholder="Cole sua chave aqui">
+          <small>Com a chave, você escreve do seu jeito e lança várias coisas numa frase. Pegue grátis em aistudio.google.com.</small></div>
+        <div class="campo"><label for="cfg-modelo">Modelo</label><input id="cfg-modelo" value="${esc(c.modelo)}"></div>
+      </div>
+
+      <div class="secao"><h2>Backup</h2></div>
+      <div class="cartao">
+        <p class="status">Seus dados ficam só neste celular. Copie o backup de vez em quando, principalmente antes de atualizar o app.</p>
+        <div class="campo"><textarea id="backup" aria-label="Backup em texto" placeholder="Cole aqui um backup para restaurar"></textarea></div>
+        <div class="botoes"><button class="btn primario" id="copiar">Copiar backup</button><button class="btn" id="restaurar">Restaurar</button><button class="btn perigo" id="zerar">Apagar tudo</button></div>
+      </div>`;
+    ligar("cfg-gemini", "change", (e) => { c.gemini = e.target.value.trim(); salvar(); mostrarAviso(c.gemini ? "Assistente com IA ligado" : "Assistente com IA desligado"); });
+    ligar("cfg-modelo", "change", (e) => { c.modelo = e.target.value.trim() || PADRAO().cfg.modelo; salvar(); mostrarAviso("Modelo salvo"); });
+    ligar("copiar", "click", async () => {
+      const txt = JSON.stringify(S);
+      document.getElementById("backup").value = txt;
+      try { await navigator.clipboard.writeText(txt); mostrarAviso("Backup copiado"); }
+      catch { mostrarAviso("Backup no campo acima. Selecione e copie."); }
+    });
+    ligar("restaurar", "click", () => {
+      try {
+        const novo = JSON.parse(document.getElementById("backup").value);
+        if (!Array.isArray(novo.eventos) || !Array.isArray(novo.trans)) throw new Error();
+        S = Object.assign(PADRAO(), novo); S.cfg = Object.assign(PADRAO().cfg, S.cfg); aplicarCategorias(); aplicarTema();
+        S.investimentos = S.investimentos || []; S.mercado = S.mercado || []; S.prioridades = S.prioridades || []; S.histMercado = S.histMercado || {};
+        salvar(); mostrarAviso("Backup restaurado"); render();
+      } catch { mostrarAviso("Esse texto não é um backup válido"); }
+    });
+    ligar("zerar", "click", (e) => {
+      if (e.target.dataset.ok) { S = PADRAO(); aplicarCategorias(); aplicarTema(); salvar(); mostrarAviso("Tudo apagado"); UI.ajSec = null; render(); }
+      else { e.target.dataset.ok = "1"; e.target.textContent = "Toque de novo para apagar"; }
+    });
+  }
+}
+
+/* Folha para criar ou editar uma categoria sua */
+function abrirFolhaCategoria(tipo, nomeAtual) {
+  const ex = S.cfg.catExtras[tipo] || {};
+  const [emoji0, cor0] = nomeAtual ? ex[nomeAtual] : [EMOJIS_CAT[0], CORES_CAT[0]];
+  let emoji = emoji0, cor = cor0;
+  const prever = () => { const t = folha.querySelector(".previa-cat"); t.style.setProperty("--cor", cor);
+    t.querySelector(".tile-ico").style.background = cor + "26"; t.querySelector(".tile-ico").textContent = emoji;
+    t.querySelector(".tile-nome").textContent = folha.querySelector("#ec-nome").value.trim() || "Categoria"; };
+  abrirFolhaPersonalizada(`
+    <h2>${nomeAtual ? "Editar categoria" : `Nova categoria de ${tipo === "despesa" ? "gasto" : "receita"}`}</h2>
+    <div class="previa-linha"><div class="tile-cat ativo previa-cat" style="--cor:${cor}"><span class="tile-ico" style="background:${cor}26">${emoji}</span><span class="tile-nome">${esc(nomeAtual || "Categoria")}</span></div></div>
+    <form id="form-ec">
+      <div class="campo"><label for="ec-nome">Nome</label><input id="ec-nome" maxlength="18" required placeholder="Pet, Games, Presentes…" value="${esc(nomeAtual || "")}"></div>
+      <div class="campo"><label>Emoji</label>
+        <div class="emojis-cat grande">${EMOJIS_CAT.map((e) => `<button type="button" data-ec-emoji="${e}" class="${e === emoji ? "ativo" : ""}">${e}</button>`).join("")}</div>
+        <input id="ec-emoji-livre" class="input-emoji" placeholder="Ou cole qualquer emoji aqui" maxlength="16"></div>
+      <div class="campo"><label>Cor</label>
+        <div class="cores cores-cat">${CORES_CAT.map((c) => `<button type="button" data-ec-cor="${c}" class="${c === cor ? "ativo" : ""}" style="background:${c}" aria-label="Cor"></button>`).join("")}
+          <label class="cor-mini" aria-label="Outra cor"><input type="color" id="ec-cor-livre" value="${cor}">＋</label></div></div>
+      <button class="btn primario largo" type="submit">${nomeAtual ? "Salvar alterações" : "Criar categoria"}</button>
+      ${nomeAtual ? `<button type="button" class="btn perigo largo" id="ec-apagar" style="margin-top:8px">Apagar categoria</button>` : ""}
+    </form>`, () => {
+    folha.querySelector("#ec-nome").addEventListener("input", prever);
+    folha.querySelectorAll("[data-ec-emoji]").forEach((b) => b.onclick = () => {
+      emoji = b.dataset.ecEmoji; folha.querySelectorAll("[data-ec-emoji]").forEach((x) => x.classList.toggle("ativo", x === b)); prever(); });
+    folha.querySelector("#ec-emoji-livre").addEventListener("input", (e) => {
+      const em = primeiroEmoji(e.target.value);
+      if (em && !/^[\p{L}\p{N}\s]$/u.test(em)) { emoji = em; folha.querySelectorAll("[data-ec-emoji]").forEach((x) => x.classList.remove("ativo")); prever(); }
+    });
+    folha.querySelectorAll("[data-ec-cor]").forEach((b) => b.onclick = () => {
+      cor = b.dataset.ecCor; folha.querySelectorAll("[data-ec-cor]").forEach((x) => x.classList.toggle("ativo", x === b)); prever(); });
+    folha.querySelector("#ec-cor-livre").addEventListener("input", (e) => { cor = e.target.value; folha.querySelectorAll("[data-ec-cor]").forEach((x) => x.classList.remove("ativo")); prever(); });
+    folha.querySelector("#form-ec").onsubmit = (e) => {
+      e.preventDefault();
+      const nome = folha.querySelector("#ec-nome").value.trim().replace(/^./, (l) => l.toUpperCase());
+      if (!nome) return;
+      const existe = Object.keys(CATEGORIAS[tipo]).some((cat) => cat !== nomeAtual && semAcento(cat) === semAcento(nome));
+      if (existe) { mostrarAviso("Já existe uma categoria com esse nome"); return; }
+      const novo = { ...ex };
+      if (nomeAtual && nomeAtual !== nome) {
+        delete novo[nomeAtual];
+        S.trans.forEach((t) => { if (t.tipo === tipo && t.categoria === nomeAtual) t.categoria = nome; });
+      }
+      novo[nome] = [emoji, cor];
+      S.cfg.catExtras[tipo] = novo; aplicarCategorias(); salvar(); fecharFolha(); render();
+      mostrarAviso(nomeAtual ? "Categoria atualizada" : `Categoria ${nome} criada`);
+    };
+    const ap = folha.querySelector("#ec-apagar");
+    if (ap) ap.onclick = (e) => {
+      if (e.target.dataset.ok) { delete S.cfg.catExtras[tipo][nomeAtual]; aplicarCategorias(); salvar(); fecharFolha(); render(); mostrarAviso("Categoria apagada. Os lançamentos antigos continuam salvos."); }
+      else { e.target.dataset.ok = "1"; e.target.textContent = "Toque de novo para apagar"; }
+    };
+  });
 }
 
 /* ================= listas: mercado e prioridades ================= */
@@ -1697,7 +1861,9 @@ function desenharFolha() {
         <div class="form-cat" id="form-cat" hidden>
           <input id="cat-nome" placeholder="Nome da categoria: Pet, Games…" maxlength="18" autocomplete="off">
           <div class="emojis-cat">${EMOJIS_CAT.map((e, i) => `<button type="button" data-emoji="${e}" class="${i === 0 ? "ativo" : ""}">${e}</button>`).join("")}</div>
-          <div class="cores cores-cat">${CORES_CAT.map((c, i) => `<button type="button" data-cor-cat="${c}" class="${i === 0 ? "ativo" : ""}" style="background:${c}" aria-label="Cor"></button>`).join("")}</div>
+          <input id="cat-emoji-livre" class="input-emoji" placeholder="Ou cole qualquer emoji aqui" maxlength="16">
+          <div class="cores cores-cat">${CORES_CAT.map((c, i) => `<button type="button" data-cor-cat="${c}" class="${i === 0 ? "ativo" : ""}" style="background:${c}" aria-label="Cor"></button>`).join("")}
+            <label class="cor-mini" aria-label="Outra cor"><input type="color" id="cat-cor-livre" value="${CORES_CAT[0]}">＋</label></div>
           <div class="botoes"><button type="button" class="btn primario" id="criar-cat">Criar categoria</button><button type="button" class="btn" id="cancelar-cat">Cancelar</button></div>
         </div></div>
       ${tipo === "despesa" ? `<div class="campo"><label>Pagamento</label><div class="chips" id="f-met">
@@ -1715,6 +1881,7 @@ function desenharFolha() {
       if (b.id === "nova-cat") { formCat.hidden = !formCat.hidden; if (!formCat.hidden) folha.querySelector("#cat-nome").focus(); return; }
       grade.querySelectorAll(".tile-cat").forEach((x) => x.classList.toggle("ativo", x === b));
     });
+    folha.querySelector("#cat-cor-livre").addEventListener("input", () => formCat.querySelectorAll(".cores-cat button").forEach((x) => x.classList.remove("ativo")));
     formCat.querySelectorAll(".emojis-cat, .cores-cat").forEach((g) => g.addEventListener("click", (e) => {
       const b = e.target.closest("button"); if (!b) return;
       g.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
@@ -1724,7 +1891,10 @@ function desenharFolha() {
       const nome = folha.querySelector("#cat-nome").value.trim().replace(/^./, (l) => l.toUpperCase());
       if (!nome) { mostrarAviso("Dê um nome para a categoria"); folha.querySelector("#cat-nome").focus(); return; }
       if (Object.keys(CATEGORIAS[tipo]).some((c) => semAcento(c) === semAcento(nome))) { mostrarAviso("Essa categoria já existe"); return; }
-      const emoji = formCat.querySelector(".emojis-cat .ativo").dataset.emoji, cor = formCat.querySelector(".cores-cat .ativo").dataset.corCat;
+      const livre = primeiroEmoji(folha.querySelector("#cat-emoji-livre").value);
+      const emoji = livre && !/^[\p{L}\p{N}\s]$/u.test(livre) ? livre : (formCat.querySelector(".emojis-cat .ativo")?.dataset.emoji || EMOJIS_CAT[0]);
+      const corSel = formCat.querySelector(".cores-cat .ativo");
+      const cor = corSel ? corSel.dataset.corCat : folha.querySelector("#cat-cor-livre").value;
       S.cfg.catExtras[tipo] = { ...(S.cfg.catExtras[tipo] || {}), [nome]: [emoji, cor] };
       aplicarCategorias(); salvar();
       grade.querySelectorAll(".tile-cat").forEach((x) => x.classList.remove("ativo"));
@@ -1793,7 +1963,7 @@ folha.addEventListener("click", (e) => {
 tela.addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   const d = b.dataset;
-  if (d.ir) irPara(d.ir);
+  if (d.ir) { irPara(d.ir); if (d.ajsec) { UI.ajSec = d.ajsec; render(); } }
   else if (d.novo) abrirFolha(d.novo);
   else if (d.dia) {
     const mesmo = UI.filtroAgenda === "dia" && UI.diaSel === d.dia;
@@ -1809,6 +1979,7 @@ tela.addEventListener("click", (e) => {
   else if (d.filtroBanco !== undefined) { UI.filtroBanco = d.filtroBanco || null; UI.filtroCat = null; render(); }
   else if (d.novoInvest) abrirFolhaInvest(null);
   else if (d.invest) { const i = S.investimentos.find((x) => x.id === Number(d.invest)); if (i) abrirFolhaInvest(i); }
+  else if (d.aj !== undefined) { UI.ajSec = d.aj || null; render(); window.scrollTo(0, 0); }
   else if (d.listaSeg) { UI.lista = d.listaSeg; render(); }
   else if (d.marcar) { const i = S.mercado.find((x) => x.id === Number(d.marcar)); if (i) { i.feito = !i.feito; salvar(); render(); } }
   else if (d.delItem) { S.mercado = S.mercado.filter((x) => x.id !== Number(d.delItem)); salvar(); render(); }
@@ -1850,6 +2021,7 @@ document.getElementById("form-assistente").addEventListener("submit", (e) => { e
 /* Botão voltar do Android: fecha a folha ou volta pra tela Hoje. */
 window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
   if (!folha.hidden) fecharFolha();
+  else if (UI.aba === "ajustes" && UI.ajSec) { UI.ajSec = null; render(); }
   else if (UI.aba !== "hoje") irPara("hoje");
   else window.Capacitor.Plugins.App.exitApp();
 });
