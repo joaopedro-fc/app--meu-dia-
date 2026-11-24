@@ -29,6 +29,16 @@ function aplicarTema() {
   st.setProperty("--acento-texto", t); st.setProperty("--roxo-escuro", r);
 }
 const METODOS = ["débito", "crédito", "pix", "dinheiro"];
+const CATEGORIAS_BASE = JSON.parse(JSON.stringify(CATEGORIAS));
+const EMOJIS_CAT = ["🐶", "🎮", "✈️", "💄", "🍺", "⚽", "🎁", "🧾", "🚗", "👶", "💻", "🏋️", "📱", "🎵", "🌱", "💼", "🏦", "🎨", "🛠️", "❤️"];
+const CORES_CAT = ["#8E7CFF", "#5EE6A8", "#FFD166", "#FF7B72", "#5DB8FF", "#FF79C6", "#4FD1C5", "#FFB454"];
+function aplicarCategorias() {
+  const ex = (S && S.cfg && S.cfg.catExtras) || { despesa: {}, receita: {} };
+  for (const tipo of ["despesa", "receita"]) {
+    const { Outros, ...base } = CATEGORIAS_BASE[tipo];
+    CATEGORIAS[tipo] = { ...base, ...(ex[tipo] || {}), Outros };
+  }
+}
 const DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
   "setembro", "outubro", "novembro", "dezembro"];
@@ -38,17 +48,58 @@ const LEMBRETES = [[null, "Sem lembrete"], [0, "Na hora"], [10, "10 min antes"],
 /* ================= estado ================= */
 const CHAVE = "meudia_v1";
 const PADRAO = () => ({
-  seq: 1, eventos: [], trans: [], mercado: [], prioridades: [], histMercado: {},
-  cfg: { nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
+  seq: 1, eventos: [], trans: [], mercado: [], prioridades: [], histMercado: {}, investimentos: [],
+  cfg: { emailUrl: "", nome: "João", avatar: "", foto: "", cor: "roxo", meta: 0, bancos: ["Banco do Brasil", "C6 Bank"], catExtras: { despesa: {}, receita: {} }, gemini: "", modelo: "gemini-3.5-flash-lite", lembrete: 30, resumo: "07:00" },
 });
 let S;
 try { S = Object.assign(PADRAO(), JSON.parse(localStorage.getItem(CHAVE) || "null") || {}); }
 catch { S = PADRAO(); }
 S.cfg = Object.assign(PADRAO().cfg, S.cfg);
+if (!S.cfg.catExtras || typeof S.cfg.catExtras !== "object") S.cfg.catExtras = { despesa: {}, receita: {} };
+aplicarCategorias();
 
 function salvar() {
   try { localStorage.setItem(CHAVE, JSON.stringify(S)); } catch { /* armazenamento indisponível */ }
   reagendar();
+  agendarSync();
+}
+
+/* ================= resumo por e-mail (Google Apps Script do usuário) ================= */
+let timerSync = null;
+function agendarSync(atraso = 8000) {
+  if (!S.cfg.emailUrl) return;
+  clearTimeout(timerSync);
+  timerSync = setTimeout(() => sincronizar("dados"), atraso);
+}
+function dadosResumo() {
+  const agora = new Date(), ontem = iso(somaDias(agora, -1)), limite = iso(somaDias(agora, 31));
+  const mesAt = mesIso(agora), mesAnt = mesIso(new Date(agora.getFullYear(), agora.getMonth() - 1, 1));
+  return {
+    versao: 1, nome: S.cfg.nome, meta: Number(S.cfg.meta) || 0, atualizado: agora.toISOString(),
+    eventos: S.eventos.filter((e) => e.data >= ontem && e.data <= limite).map(({ titulo, data, hora }) => ({ titulo, data, hora })),
+    mercado: (S.mercado || []).filter((i) => !i.feito).map(({ nome, qtd, secao }) => ({ nome, qtd, secao })),
+    prioridades: (S.prioridades || []).filter((p) => !p.comprado).map(({ nome, preco, prioridade }) => ({ nome, preco, prioridade })),
+    trans: S.trans.filter((t) => t.data.startsWith(mesAt) || t.data.startsWith(mesAnt))
+      .map(({ tipo, valor, categoria, descricao, data, banco, metodo }) => ({ tipo, valor, categoria, descricao, data, banco, metodo })),
+    investimentos: (S.investimentos || []).map(({ descricao, tipo, banco, valor }) => ({ descricao, tipo, banco, valor })),
+  };
+}
+function lerStatusSync() { try { return JSON.parse(localStorage.getItem("meudia_sync") || "{}"); } catch { return {}; } }
+async function sincronizar(acao = "dados") {
+  const url = (S.cfg.emailUrl || "").trim();
+  if (!url) return { ok: false, erro: "Cole o link do resumo primeiro." };
+  let st;
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ acao, dados: dadosResumo() }) });
+    let j = {};
+    try { j = await r.json(); } catch { j = { ok: r.ok || (r.status >= 300 && r.status < 400) }; } // o Google responde com redirecionamento depois de salvar
+    st = j.ok ? { ok: true, em: new Date().toISOString() } : { ok: false, em: new Date().toISOString(), erro: j.erro || `HTTP ${r.status}` };
+  } catch (e) {
+    st = { ok: false, em: new Date().toISOString(), erro: "Sem conexão com o link" };
+  }
+  try { localStorage.setItem("meudia_sync", JSON.stringify(st)); } catch { /* ignora */ }
+  return st;
 }
 const novoId = () => S.seq++;
 
@@ -139,6 +190,7 @@ const PALAVRAS = {
 };
 const PALAVRAS_METODO = { "débito": ["debito"], "crédito": ["credito", "cartao"], "pix": ["pix"], "dinheiro": ["dinheiro", "especie"] };
 const tem = (t, p) => new RegExp(`\\b${p}\\b`).test(t);
+const acharCatPropria = (t, tipo) => Object.keys((S.cfg.catExtras || {})[tipo] || {}).find((c) => tem(t, semAcento(c))) || null;
 const acharCategoria = (t, mapa) => Object.keys(mapa).find((c) => mapa[c].some((p) => tem(t, p))) || "Outros";
 const acharMetodo = (t) => Object.keys(PALAVRAS_METODO).find((m) => PALAVRAS_METODO[m].some((p) => tem(t, p))) || null;
 const SEM_DATA = /\b\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?\b/g;
@@ -183,15 +235,17 @@ function interpretarLocal(msg) {
   const ehReceita = PAL_RECEITA.includes(primeira);
   const semDatas = t.replace(SEM_DATA, "");
   const valor = parseValor(semDatas.replace(/\b\d{1,2}(:\d{2}|h\d{0,2})(?!\d)/g, "").replace(/\b(dia|as)\s+\d{1,2}\b/g, ""));
-  const catGasto = acharCategoria(t, PALAVRAS.despesa);
+  const catGasto = acharCatPropria(t, "despesa") || acharCategoria(t, PALAVRAS.despesa);
   const palavraEvento = PAL_EVENTO.includes(primeira) || PAL_EVENTO.some((p) => tem(t, p));
   const data = parseData(t);
   const hora = parseHora(t);
   const ehGasto = PAL_GASTO.includes(primeira) || (valor !== null && catGasto !== "Outros" && !data && !hora);
   const ignorar = new Set(["gastei", "gasto", "paguei", "comprei", "recebi", "ganhei", "receita", "despesa", "reais", "real", "caiu", "entrada",
-    "no", "na", "em", "de", "do", "da", "com", "debito", "credito", "pix", "dinheiro", "cartao", "o", "a", "r", "hoje", "ontem", "um", "uma"]);
+    "no", "na", "em", "de", "do", "da", "com", "debito", "credito", "pix", "dinheiro", "cartao", "o", "a", "r", "hoje", "ontem", "um", "uma",
+    "banco", "brasil", "bb", "c6", "bank", "nubank", "inter", "pelo", "pela"]);
   const descricao = () => {
-    const d = (msg.toLowerCase().match(/[a-zà-ú]+/g) || []).filter((w) => !ignorar.has(semAcento(w))).slice(0, 4).join(" ");
+    const d = (msg.toLowerCase().replace(/\b(c6( bank)?|banco do brasil)\b/g, " ").match(/[a-zà-ú]+/g) || [])
+      .filter((w) => w.length > 1 && !ignorar.has(semAcento(w))).slice(0, 4).join(" ");
     return d ? d[0].toUpperCase() + d.slice(1) : "";
   };
   const tituloEvento = () => {
@@ -206,20 +260,30 @@ function interpretarLocal(msg) {
     return txt ? txt[0].toUpperCase() + txt.slice(1) : "";
   };
 
+  const banco = acharBanco(t);
+
+  /* investimentos: guardei / investi / apliquei / resgatei */
+  if (["guardei", "investi", "apliquei", "depositei", "guardar", "resgatei", "retirei", "tirei", "saquei"].includes(primeira) && (acharTipoInvest(t) || /\b(guardei|investi|apliquei)\b/.test(t))) {
+    const sinal = ["resgatei", "retirei", "tirei", "saquei"].includes(primeira) ? -1 : 1;
+    const tipo = acharTipoInvest(t);
+    if (valor === null) return [{ acao: "resposta", texto: `Quanto você ${sinal > 0 ? "guardou" : "retirou"}? Ex.: “guardei 200 na caixinha do C6”.` }];
+    return [{ acao: "add_aporte", valor: sinal * valor, tipo, banco }];
+  }
+
   /* receita */
   if (ehReceita) {
-    const categoria = acharCategoria(t, PALAVRAS.receita), desc = descricao() || categoria;
-    if (valor === null) return [{ acao: "completar", modo: "receita", pre: { categoria, descricao: desc, data: data ? iso(data) : undefined, foco: "f-valor",
+    const categoria = acharCatPropria(t, "receita") || acharCategoria(t, PALAVRAS.receita), desc = descricao() || categoria;
+    if (valor === null) return [{ acao: "completar", modo: "receita", pre: { categoria, descricao: desc, banco, data: data ? iso(data) : undefined, foco: "f-valor",
       aviso: `Entendi uma receita${categoria !== "Outros" ? ` de ${categoria.toLowerCase()}` : ""}. Quanto você recebeu?` } }];
-    return [{ acao: "add_transacao", tipo: "receita", valor, categoria, metodo: null, descricao: desc, data: iso(data || new Date()) }];
+    return [{ acao: "add_transacao", tipo: "receita", valor, categoria, metodo: null, banco, descricao: desc, data: iso(data || new Date()) }];
   }
 
   /* gasto */
   if (ehGasto) {
     const desc = descricao() || catGasto;
-    if (valor === null) return [{ acao: "completar", modo: "despesa", pre: { categoria: catGasto, descricao: desc, metodo: acharMetodo(t), data: data ? iso(data) : undefined, foco: "f-valor",
+    if (valor === null) return [{ acao: "completar", modo: "despesa", pre: { categoria: catGasto, descricao: desc, metodo: acharMetodo(t), banco, data: data ? iso(data) : undefined, foco: "f-valor",
       aviso: `Entendi um gasto${catGasto !== "Outros" ? ` em ${catGasto.toLowerCase()}` : ""}. Qual foi o valor?` } }];
-    return [{ acao: "add_transacao", tipo: "despesa", valor, categoria: catGasto, metodo: acharMetodo(t), descricao: desc, data: iso(data || new Date()) }];
+    return [{ acao: "add_transacao", tipo: "despesa", valor, categoria: catGasto, metodo: acharMetodo(t), banco, descricao: desc, data: iso(data || new Date()) }];
   }
 
   /* compromisso: tem palavra de evento, data ou hora */
@@ -272,6 +336,8 @@ async function interpretarIA(msg) {
 Responda SOMENTE JSON {"acoes":[...]}. Uma mensagem pode ter várias ações. Ações:
 - {"acao":"add_evento","titulo":str,"data":"YYYY-MM-DD","hora":"HH:MM"|null,"lembrar_min":int|null} — compromissos e tarefas. Sem hora = tarefa do dia. Só use add_evento com dia E hora (ou se for tarefa/dia todo). Com hora e sem pedido de lembrete, lembrar_min=${S.cfg.lembrete}. "sem lembrete" = null. "1h antes" = 60.
 - {"acao":"add_transacao","tipo":"despesa"|"receita","valor":number,"categoria":str,"metodo":"débito"|"crédito"|"pix"|"dinheiro"|null,"descricao":str,"data":"YYYY-MM-DD"} — despesas: ${cats}. receitas: ${catsR}. Farmácia/remédio=Saúde; supermercado/feira=Mercado; restaurante/lanche/ifood/padaria=Alimentação; uber/gasolina=Transporte; aluguel=Moradia; luz/água/internet=Contas; netflix/spotify=Assinaturas; curso/livro=Educação. "no cartão" sem dizer qual = crédito. descricao curta. data = hoje se não disser.
+- Em add_transacao, inclua "banco" quando o usuário disser: um de ${JSON.stringify(S.cfg.bancos)} ("bb" = Banco do Brasil, "c6" = C6 Bank); senão null.
+- {"acao":"add_aporte","valor":number,"tipo":"CDB / CDI"|"Poupança"|"Caixinha"|"Tesouro Direto"|"LCI / LCA"|"Ações e FIIs"|"Cripto"|"Outros"|null,"banco":str|null} — guardou ou investiu dinheiro (valor positivo) ou resgatou/retirou (valor negativo). Ex.: "guardei 300 na caixinha do C6".
 - {"acao":"ver_agenda","data":"YYYY-MM-DD"} — quer ver a agenda de um dia.
 - {"acao":"resumo","mes":"YYYY-MM"} — quer ver resumo/gastos de um mês.
 - {"acao":"add_mercado","itens":[{"nome":str,"qtd":str}]} — itens para a lista do supermercado ("põe leite e pão na lista", "lista: 2kg arroz, café"). qtd "" se não disser.
@@ -319,9 +385,10 @@ function executar(a) {
     if (!valor) return { texto: "Faltou o valor.", erro: true };
     const categoria = CATEGORIAS[tipo][a.categoria] ? a.categoria : "Outros";
     const t = { id: novoId(), tipo, valor, categoria, metodo: METODOS.includes(a.metodo) ? a.metodo : null,
+      banco: S.cfg.bancos.includes(a.banco) ? a.banco : null,
       descricao: (a.descricao || categoria).trim(), data: /^\d{4}-\d{2}-\d{2}$/.test(a.data || "") ? a.data : hojeIso() };
     S.trans.push(t);
-    let texto = `${tipo === "despesa" ? "Gasto" : "Receita"} de ${brl(valor)} em ${categoria}${t.metodo ? ` (${t.metodo})` : ""}`;
+    let texto = `${tipo === "despesa" ? "Gasto" : "Receita"} de ${brl(valor)} em ${categoria}${t.metodo || t.banco ? ` (${[t.metodo, t.banco].filter(Boolean).join(", ")})` : ""}`;
     if (tipo === "despesa") {
       const noMes = S.trans.filter((x) => x.tipo === "despesa" && x.categoria === categoria && x.data.slice(0, 7) === t.data.slice(0, 7))
         .reduce((s, x) => s + x.valor, 0);
@@ -353,6 +420,22 @@ function executar(a) {
     const p = adicionarPrioridade(String(a.nome), a.preco, a.prioridade, a.nota);
     return { texto: `Nas prioridades: ${p.nome}${p.preco ? ` (${brl(p.preco)})` : ""}, prioridade ${PRIORIDADES[p.prioridade][0].toLowerCase()}.`,
       desfazer: () => { S.prioridades = S.prioridades.filter((x) => x.id !== p.id); } };
+  }
+  if (a.acao === "add_aporte") {
+    const v = Number(a.valor);
+    if (!v) return { texto: "Faltou o valor.", erro: true };
+    const tipo = INVEST_TIPOS[a.tipo] ? a.tipo : null, banco = S.cfg.bancos.includes(a.banco) ? a.banco : null;
+    const cand = S.investimentos.filter((i) => (!tipo || i.tipo === tipo) && (!banco || i.banco === banco));
+    let inv = cand.length === 1 ? cand[0] : cand.find((i) => i.tipo === tipo && i.banco === banco);
+    if (!inv && v < 0) return { texto: "Não achei esse investimento para retirar. Confira em Finanças → Investimentos.", erro: true };
+    const antes = inv ? { ...inv, movimentos: [...(inv.movimentos || [])] } : null;
+    if (!inv) {
+      inv = { id: novoId(), descricao: tipo || "Investimento", tipo: tipo || "Outros", banco, valor: 0, rendimento: "", movimentos: [] };
+      S.investimentos.push(inv);
+    }
+    aplicarMovimento(inv, v);
+    return { texto: `${v > 0 ? "Guardado" : "Retirado"}: ${brl(Math.abs(v))} em ${inv.descricao}. Saldo: ${brl(inv.valor)}.`,
+      desfazer: () => { if (antes) Object.assign(inv, antes); else S.investimentos = S.investimentos.filter((x) => x.id !== inv.id); } };
   }
   if (a.acao === "completar") {
     const modo = ["evento", "despesa", "receita"].includes(a.modo) ? a.modo : "evento";
@@ -443,7 +526,7 @@ function checarNoNavegador() {
 }
 
 /* ================= interface ================= */
-const UI = { aba: "hoje", diaSel: hojeIso(), mesCal: mesIso(new Date()), mesFin: mesIso(new Date()), respostas: [], confirmar: null, filtroTipo: "todos", filtroCat: null, filtroAgenda: "mes" };
+const UI = { aba: "hoje", diaSel: hojeIso(), mesCal: mesIso(new Date()), mesFin: mesIso(new Date()), respostas: [], confirmar: null, filtroTipo: "todos", filtroCat: null, filtroAgenda: "mes", finSeg: "mov", filtroBanco: null };
 const tela = document.getElementById("tela");
 const svg = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
 const ICONE_X = svg('<path d="M6 6l12 12M18 6L6 18"/>');
@@ -461,6 +544,7 @@ const somaGastos = (pred) => S.trans.filter((t) => t.tipo === "despesa" && pred(
 const entradaFixa = document.getElementById("entrada-fixa");
 function irPara(aba) {
   UI.aba = aba; UI.confirmar = null;
+  mostrarBarras();
   document.querySelectorAll(".abas [data-aba]").forEach((b) => b.classList.toggle("ativa", b.dataset.aba === aba));
   render(); window.scrollTo(0, 0);
 }
@@ -548,16 +632,6 @@ function contagem(quando) {
   return { grande: `${dias}`, peq: dias === 1 ? "dia" : "dias", texto: dias === 1 ? "amanhã" : `em ${dias} dias` };
 }
 
-function atalhos() {
-  const desde = iso(somaDias(new Date(), -60)), cont = {};
-  S.trans.filter((t) => t.data >= desde).forEach((t) => {
-    const k = (t.tipo === "receita" ? "Recebi " : "") + t.descricao.trim().toLowerCase();
-    cont[k] = (cont[k] || 0) + 1;
-  });
-  const freq = Object.entries(cont).sort((a, b) => b[1] - a[1]).map(([k]) => k);
-  const padrao = ["mercado", "almoço", "uber", "farmácia", "Recebi salário"];
-  return [...new Set([...freq, ...padrao])].slice(0, 6).map((k) => k[0].toUpperCase() + k.slice(1));
-}
 
 function renderHoje() {
   const h = hojeIso(), d = new Date(), mes = mesIso(d);
@@ -655,7 +729,6 @@ function renderHoje() {
 
     ${amanha.length ? `<div class="secao"><h2>Amanhã</h2></div>${listaEventos(amanha)}` : ""}
   `;
-  document.getElementById("atalhos").innerHTML = atalhos().map((a) => `<button type="button" data-atalho="${esc(a)}">${esc(a)}</button>`).join("");
 }
 
 async function enviarAssistente() {
@@ -730,16 +803,18 @@ function renderAgenda() {
 }
 
 function renderFinancas() {
+  if (UI.finSeg === "inv") return renderInvestimentos();
+  const doBanco = (t) => !UI.filtroBanco || t.banco === UI.filtroBanco;
   const mes = UI.mesFin;
   const [y, m] = mes.split("-").map(Number);
   const ehMesAtual = mes === mesIso(new Date());
   const nDias = new Date(y, m, 0).getDate();
   const diasCorridos = ehMesAtual ? new Date().getDate() : nDias;
-  const ts = S.trans.filter((t) => t.data.startsWith(mes));
+  const ts = S.trans.filter((t) => t.data.startsWith(mes) && doBanco(t));
   const desp = ts.filter((t) => t.tipo === "despesa"), rec = ts.filter((t) => t.tipo === "receita");
   const totD = desp.reduce((s, t) => s + t.valor, 0), totR = rec.reduce((s, t) => s + t.valor, 0), saldo = totR - totD;
   const mesAnt = mesIso(new Date(y, m - 2, 1));
-  const totAnt = S.trans.filter((t) => t.tipo === "despesa" && t.data.startsWith(mesAnt)).reduce((s, t) => s + t.valor, 0);
+  const totAnt = S.trans.filter((t) => t.tipo === "despesa" && t.data.startsWith(mesAnt) && doBanco(t)).reduce((s, t) => s + t.valor, 0);
   const nomeCurto = MESES[m - 1];
 
   /* comparação com o mês anterior */
@@ -801,9 +876,12 @@ function renderFinancas() {
         <button data-mesfin="1" aria-label="Próximo mês">${ICONE_DIR}</button>
       </div>
     </div>
+    ${segmentoFinancas()}
+    ${filtroBancos()}
+    <div style="height:12px"></div>
 
     <section class="heroi">
-      <div class="heroi-topo"><span>Saldo de ${nomeCurto}</span>${comp}</div>
+      <div class="heroi-topo"><span>Saldo de ${nomeCurto}${UI.filtroBanco ? ` no ${esc(UI.filtroBanco)}` : ""}</span>${comp}</div>
       <div class="heroi-valor ${saldo < 0 ? "coral" : ""}">${brl(saldo)}</div>
       <div class="heroi-linhas">
         <div><span class="seta-ico baixo">${svg('<path d="M12 5v14M6 13l6 6 6-6"/>')}</span><div><div class="rot">Gastos</div><b class="coral">${brl(totD)}</b></div></div>
@@ -844,7 +922,7 @@ function renderFinancas() {
       </div>
       <ul class="cats">${cats.map(([c, v]) => `
         <li><button data-cat-filtro="${c}" class="${UI.filtroCat === c ? "ativa" : UI.filtroCat ? "apagada" : ""}">
-          <span class="chip-ico" style="background:${corCat("despesa", c)}26">${CATEGORIAS.despesa[c][0]}</span>
+          <span class="chip-ico" style="background:${corCat("despesa", c)}26">${(CATEGORIAS.despesa[c] || CATEGORIAS.despesa.Outros)[0]}</span>
           <span class="cat-corpo">
             <span class="cat-topo"><span>${c}</span><b>${brl(v)}</b></span>
             <span class="cat-barra"><i style="width:${(v / cats[0][1]) * 100}%;background:${corCat("despesa", c)}"></i></span>
@@ -858,7 +936,15 @@ function renderFinancas() {
       <div class="faixa">${mets.map(([k, v]) => `<i style="flex:${v};background:${CORES_MET[k] || "#7D8594"}"></i>`).join("")}</div>
       <div class="metodos">${mets.map(([k, v]) => `
         <div><i style="background:${CORES_MET[k] || "#7D8594"}"></i><span>${k[0].toUpperCase() + k.slice(1)}</span><b>${brl(v)}</b><span class="suave">${Math.round((v / totD) * 100)}%</span></div>`).join("")}</div>
-    </div>` : ""}
+    </div>
+    ${!UI.filtroBanco && S.cfg.bancos.length ? (() => {
+      const pb = {};
+      ts.forEach((t) => { const b = t.banco || "Sem banco"; pb[b] = pb[b] || { g: 0, r: 0 }; pb[b][t.tipo === "despesa" ? "g" : "r"] += t.valor; });
+      const lb = Object.entries(pb).sort((a, b) => (b[1].g + b[1].r) - (a[1].g + a[1].r));
+      return `<div class="secao"><h2>Por banco</h2><span class="suave" style="font-size:13px">toque para filtrar</span></div>
+        <div class="duas">${lb.map(([b, o]) => `<button class="cartao stat banco-card" data-filtro-banco="${esc(b === "Sem banco" ? "" : b)}" style="text-align:left;border-top:3px solid ${b === "Sem banco" ? "#4A5160" : corBanco(b)}">
+          <div class="rot">${esc(b)}</div><div class="val coral" style="font-size:18px">−${brl(o.g)}</div><div class="det verde">+${brl(o.r)}</div></button>`).join("")}</div>`;
+    })() : ""}` : ""}
 
     <div class="secao"><h2>Lançamentos</h2><button class="btn-lancar" data-novo="despesa">${svg('<path d="M12 5v14M5 12h14"/>')}Lançar</button></div>
     <div class="filtros">
@@ -870,7 +956,7 @@ function renderFinancas() {
       return `<div class="dia-cab"><span>${d === hojeIso() ? "Hoje" : d === iso(somaDias(new Date(), -1)) ? "Ontem" : dataCurta(d)}</span><span class="${totalDia < 0 ? "" : "verde"}">${totalDia < 0 ? "−" : "+"}${brl(Math.abs(totalDia))}</span></div>
       <div class="lista">${itens.map((t) => `<div class="lanc">
         <span class="ico" style="background:${corCat(t.tipo, t.categoria)}26">${(CATEGORIAS[t.tipo][t.categoria] || CATEGORIAS[t.tipo].Outros)[0]}</span>
-        <span><span class="desc">${esc(t.descricao)}</span><br><span class="meta">${t.categoria}${t.metodo ? ` · ${t.metodo}` : ""}</span></span>
+        <span><span class="desc">${esc(t.descricao)}</span><br><span class="meta">${t.categoria}${t.metodo ? ` · ${t.metodo}` : ""}${t.banco ? ` · ${esc(t.banco)}` : ""}</span></span>
         <span class="valor ${t.tipo}">${t.tipo === "despesa" ? "−" : "+"}${brl(t.valor)}</span>
         ${botaoApagar("tr", t.id)}</div>`).join("")}</div>`;
     }).join("")
@@ -903,6 +989,24 @@ async function renderAjustes() {
         <small>Aparece na tela inicial com quanto ainda dá pra gastar por dia. Deixe vazio para não usar.</small></div>
     </div>
 
+    <div class="secao"><h2>Suas categorias</h2></div>
+    <div class="cartao">
+      <p class="status">Crie categorias suas na hora de lançar um gasto ou receita, no botão “+ Nova”. Elas aparecem aqui.</p>
+      ${["despesa", "receita"].map((tp) => { const ex = Object.entries(c.catExtras[tp] || {});
+        return ex.length ? `<div class="rot-cat">${tp === "despesa" ? "Gastos" : "Receitas"}</div><div class="lista-bancos">${ex.map(([n, [e, cor]]) =>
+          `<span class="chip-banco"><span>${e}</span>${esc(n)}<button type="button" data-del-cat="${tp}|${esc(n)}" aria-label="Remover ${esc(n)}">✕</button></span>`).join("")}</div>` : ""; }).join("")
+        || `<span class="suave">Nenhuma categoria criada ainda.</span>`}
+    </div>
+
+    <div class="secao"><h2>Seus bancos</h2></div>
+    <div class="cartao">
+      <p class="status">Usados para separar gastos, receitas e investimentos por banco em Finanças.</p>
+      <div class="chips chips-banco lista-bancos">${c.bancos.map((b) => `<span class="chip-banco"><i style="background:${corBanco(b)}"></i>${esc(b)}
+        <button type="button" data-del-banco="${esc(b)}" aria-label="Remover ${esc(b)}">✕</button></span>`).join("") || `<span class="suave">Nenhum banco cadastrado.</span>`}</div>
+      <form class="add-linha" id="form-banco" style="margin-top:12px"><input id="novo-banco" placeholder="Adicionar banco: Nubank, Inter…" autocomplete="off">
+        <button type="submit" aria-label="Adicionar banco">${svg('<path d="M12 5v14M5 12h14"/>')}</button></form>
+    </div>
+
     <div class="secao"><h2>Lembretes</h2></div>
     <div class="cartao">
       <div class="campo"><label for="cfg-lembrete">Lembrete padrão para compromissos com hora</label>
@@ -911,6 +1015,16 @@ async function renderAjustes() {
         <input id="cfg-resumo" type="time" value="${c.resumo}"><small>Deixe vazio para não receber.</small></div>
       <div id="status-notif" class="status"></div>
       <div class="botoes"><button class="btn" id="testar">Testar notificação</button><button class="btn primario" id="exato" hidden>Permitir horário exato</button></div>
+    </div>
+
+    <div class="secao"><h2>Resumo por e-mail</h2></div>
+    <div class="cartao">
+      <p class="status">Todo dia por volta das 6:30 você recebe no seu Gmail a agenda do dia, as listas e como andam as finanças. Precisa do link do seu script do Google (veja o passo a passo).</p>
+      <div class="campo"><label for="cfg-email">Link do resumo</label>
+        <input id="cfg-email" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec?chave=…" value="${esc(c.emailUrl)}"></div>
+      <div class="status" id="status-email">${(() => { const st = lerStatusSync(); if (!c.emailUrl) return "Desligado."; if (!st.em) return "Ainda não sincronizou.";
+        const h = new Date(st.em); return st.ok ? `Sincronizado em <b>${pad(h.getDate())}/${pad(h.getMonth() + 1)} às ${pad(h.getHours())}:${pad(h.getMinutes())}</b>.` : `Falhou: <b>${esc(st.erro)}</b>.`; })()}</div>
+      <div class="botoes"><button class="btn" id="email-teste">Enviar e-mail de teste agora</button></div>
     </div>
 
     <div class="secao"><h2>Assistente com IA</h2></div>
@@ -935,10 +1049,11 @@ async function renderAjustes() {
     c.nome = document.getElementById("cfg-nome").value.trim();
     c.meta = parseValor(document.getElementById("cfg-meta").value) || 0;
     c.gemini = document.getElementById("cfg-gemini").value.trim();
+    c.emailUrl = document.getElementById("cfg-email").value.trim();
     c.modelo = document.getElementById("cfg-modelo").value.trim() || PADRAO().cfg.modelo;
     salvar();
   };
-  ["cfg-nome", "cfg-meta", "cfg-lembrete", "cfg-resumo", "cfg-gemini", "cfg-modelo"].forEach((id) => document.getElementById(id).addEventListener("change", () => { salvarCfg(); mostrarAviso("Ajustes salvos"); }));
+  ["cfg-nome", "cfg-meta", "cfg-email", "cfg-lembrete", "cfg-resumo", "cfg-gemini", "cfg-modelo"].forEach((id) => document.getElementById(id).addEventListener("change", () => { salvarCfg(); mostrarAviso("Ajustes salvos"); }));
 
   tela.querySelectorAll("[data-avatar]").forEach((b) => b.onclick = () => { c.avatar = b.dataset.avatar; c.foto = ""; salvar(); render(); mostrarAviso("Perfil atualizado"); });
   document.getElementById("foto-arquivo").onchange = async (e) => {
@@ -950,6 +1065,36 @@ async function renderAjustes() {
   const rem = document.getElementById("foto-remover");
   if (rem) rem.onclick = () => { c.foto = ""; salvar(); render(); mostrarAviso("Foto removida"); };
   tela.querySelectorAll("[data-cor]").forEach((b) => b.onclick = () => { c.cor = b.dataset.cor; aplicarTema(); salvar(); render(); mostrarAviso("Cor atualizada"); });
+  document.getElementById("email-teste").onclick = async (e) => {
+    c.emailUrl = document.getElementById("cfg-email").value.trim();
+    if (!c.emailUrl) { mostrarAviso("Cole o link do resumo primeiro"); return; }
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(c.emailUrl)) { mostrarAviso("Esse link não parece ser do Google Apps Script"); return; }
+    salvar(); e.target.textContent = "Enviando…"; e.target.disabled = true;
+    const st = await sincronizar("teste");
+    e.target.textContent = "Enviar e-mail de teste agora"; e.target.disabled = false;
+    mostrarAviso(st.ok ? "E-mail de teste enviado. Confira seu Gmail." : `Não deu certo: ${st.erro}`, 4000);
+    if (UI.aba === "ajustes") render();
+  };
+  document.getElementById("form-banco").onsubmit = (e) => {
+    e.preventDefault();
+    const nome = document.getElementById("novo-banco").value.trim();
+    if (!nome) return;
+    if (c.bancos.some((b) => semAcento(b) === semAcento(nome))) { mostrarAviso("Esse banco já está na lista"); return; }
+    c.bancos.push(nome); salvar(); render(); mostrarAviso(`${nome} adicionado`);
+  };
+  tela.querySelectorAll("[data-del-cat]").forEach((b) => b.onclick = () => {
+    if (b.dataset.ok) {
+      const [tp, n] = b.dataset.delCat.split("|");
+      delete c.catExtras[tp][n]; aplicarCategorias(); salvar(); render(); mostrarAviso("Categoria removida. Os lançamentos antigos continuam salvos.");
+    } else { b.dataset.ok = "1"; b.textContent = "Remover?"; b.classList.add("confirmar"); }
+  });
+  tela.querySelectorAll("[data-del-banco]").forEach((b) => b.onclick = () => {
+    if (b.dataset.ok) {
+      c.bancos = c.bancos.filter((x) => x !== b.dataset.delBanco);
+      if (UI.filtroBanco === b.dataset.delBanco) UI.filtroBanco = null;
+      salvar(); render(); mostrarAviso("Banco removido. Os lançamentos antigos continuam salvos.");
+    } else { b.dataset.ok = "1"; b.textContent = "Remover?"; b.classList.add("confirmar"); }
+  });
   document.getElementById("testar").onclick = async () => {
     if (ehNativo()) {
       await LN().schedule({ notifications: [{ id: 1999999, title: "Meu Dia", body: "As notificações estão funcionando.", channelId: "lembretes", schedule: { at: new Date(Date.now() + 3000) } }] });
@@ -972,11 +1117,11 @@ async function renderAjustes() {
     try {
       const novo = JSON.parse(document.getElementById("backup").value);
       if (!Array.isArray(novo.eventos) || !Array.isArray(novo.trans)) throw new Error();
-      S = Object.assign(PADRAO(), novo); S.cfg = Object.assign(PADRAO().cfg, S.cfg); S.mercado = S.mercado || []; S.prioridades = S.prioridades || []; S.histMercado = S.histMercado || {}; salvar(); mostrarAviso("Backup restaurado"); render();
+      S = Object.assign(PADRAO(), novo); S.cfg = Object.assign(PADRAO().cfg, S.cfg); aplicarCategorias(); S.investimentos = S.investimentos || []; S.mercado = S.mercado || []; S.prioridades = S.prioridades || []; S.histMercado = S.histMercado || {}; salvar(); mostrarAviso("Backup restaurado"); render();
     } catch { mostrarAviso("Esse texto não é um backup válido"); }
   };
   document.getElementById("zerar").onclick = (e) => {
-    if (e.target.dataset.ok) { S = PADRAO(); salvar(); mostrarAviso("Tudo apagado"); render(); }
+    if (e.target.dataset.ok) { S = PADRAO(); aplicarCategorias(); salvar(); mostrarAviso("Tudo apagado"); render(); }
     else { e.target.dataset.ok = "1"; e.target.textContent = "Toque de novo para apagar"; }
   };
 
@@ -1212,16 +1357,18 @@ function abrirFolhaPersonalizada(html, ligar) {
 
 function htmlPagamento() {
   return `<div class="campo"><label>Pagamento</label><div class="chips" id="f-met">
-    ${METODOS.map((m) => `<button type="button" data-met="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>`;
+    ${METODOS.map((m) => `<button type="button" data-met="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
+    ${htmlBancos("f-banco", UI.filtroBanco, "Saiu de qual banco")}`;
 }
 function ligarChipsPagamento() {
-  const g = folha.querySelector("#f-met");
-  g.onclick = (e) => {
-    const b = e.target.closest("button"); if (!b) return;
-    const ja = b.classList.contains("ativo");
-    g.querySelectorAll("button").forEach((x) => x.classList.remove("ativo"));
-    if (!ja) b.classList.add("ativo");
-  };
+  folha.querySelectorAll("#f-met, #f-banco").forEach((g) => {
+    g.onclick = (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      const ja = b.classList.contains("ativo");
+      g.querySelectorAll("button").forEach((x) => x.classList.remove("ativo"));
+      if (!ja) b.classList.add("ativo");
+    };
+  });
 }
 
 function abrirFolhaFinalizar() {
@@ -1241,7 +1388,7 @@ function abrirFolhaFinalizar() {
       const valor = parseValor(folha.querySelector("#fin-valor").value);
       if (!valor) { mostrarAviso("Informe o total pago"); return; }
       executar({ acao: "add_transacao", tipo: "despesa", valor, categoria: "Mercado",
-        metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null,
+        metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null, banco: folha.querySelector("#f-banco .ativo")?.dataset.banco || null,
         descricao: folha.querySelector("#fin-desc").value.trim() || "Mercado", data: hojeIso() });
       S.mercado = S.mercado.filter((i) => !i.feito);
       salvar(); fecharFolha(); render(); mostrarAviso(`Compra de ${brl(valor)} lançada`);
@@ -1265,10 +1412,193 @@ function abrirFolhaComprei(p) {
       p.comprado = true; p.pago = valor; p.dataCompra = hojeIso();
       if (valor && folha.querySelector("#cp-lancar").checked) {
         executar({ acao: "add_transacao", tipo: "despesa", valor, categoria: "Compras",
-          metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null, descricao: p.nome, data: hojeIso() });
+          metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null, banco: folha.querySelector("#f-banco .ativo")?.dataset.banco || null, descricao: p.nome, data: hojeIso() });
       }
       salvar(); fecharFolha(); render(); mostrarAviso(`${p.nome} comprado`);
     };
+  });
+}
+
+/* ================= bancos e investimentos ================= */
+const INVEST_TIPOS = {
+  "CDB / CDI": ["💹", "#5EE6A8"], "Poupança": ["🐷", "#FFD166"], "Caixinha": ["📦", "#8E7CFF"],
+  "Tesouro Direto": ["🏛️", "#5DB8FF"], "LCI / LCA": ["🏠", "#4FD1C5"], "Ações e FIIs": ["📈", "#FF79C6"],
+  "Cripto": ["🪙", "#FFB454"], "Outros": ["💰", "#7D8594"],
+};
+const PALAVRAS_INVEST = {
+  "Caixinha": ["caixinha", "caixinhas", "cofrinho"], "Poupança": ["poupanca"], "CDB / CDI": ["cdb", "cdi", "rdb"],
+  "Tesouro Direto": ["tesouro", "selic", "ipca"], "LCI / LCA": ["lci", "lca"], "Ações e FIIs": ["acoes", "acao", "fii", "fiis", "bolsa"],
+  "Cripto": ["cripto", "bitcoin", "btc"],
+};
+const APELIDOS_BANCO = { "banco do brasil": ["bb", "banco do brasil"], "c6 bank": ["c6", "c6 bank"], "nubank": ["nubank", "nu"],
+  "inter": ["inter"], "caixa": ["caixa economica", "caixa"], "itau": ["itau"], "bradesco": ["bradesco"], "santander": ["santander"],
+  "mercado pago": ["mercado pago"], "picpay": ["picpay"] };
+const CORES_BANCO = ["#FFD166", "#C9C9C9", "#8E7CFF", "#5DB8FF", "#FF79C6", "#5EE6A8", "#FFB454"];
+
+S.investimentos = S.investimentos || [];
+if (!Array.isArray(S.cfg.bancos)) S.cfg.bancos = ["Banco do Brasil", "C6 Bank"];
+
+const corBanco = (b) => CORES_BANCO[Math.max(S.cfg.bancos.indexOf(b), 0) % CORES_BANCO.length];
+const tipoInvest = (t) => INVEST_TIPOS[t] ? t : "Outros";
+
+function acharBanco(t) {
+  for (const b of S.cfg.bancos) {
+    const chave = semAcento(b);
+    const apelidos = APELIDOS_BANCO[chave] || [chave];
+    if (apelidos.some((a) => new RegExp(`\\b${a}\\b`).test(t))) return b;
+  }
+  return null;
+}
+const acharTipoInvest = (t) => Object.keys(PALAVRAS_INVEST).find((k) => PALAVRAS_INVEST[k].some((p) => tem(t, p))) || null;
+
+function htmlBancos(id, selecionado, rotulo = "Banco") {
+  if (!S.cfg.bancos.length) return "";
+  return `<div class="campo"><label>${rotulo}</label><div class="chips chips-banco" id="${id}">
+    ${S.cfg.bancos.map((b) => `<button type="button" data-banco="${esc(b)}" class="${b === selecionado ? "ativo" : ""}"><i style="background:${corBanco(b)}"></i>${esc(b)}</button>`).join("")}</div></div>`;
+}
+
+function filtroBancos() {
+  if (!S.cfg.bancos.length) return "";
+  return `<div class="filtros filtro-banco">
+    <button data-filtro-banco="" class="${!UI.filtroBanco ? "ativo" : ""}">Todos</button>
+    ${S.cfg.bancos.map((b) => `<button data-filtro-banco="${esc(b)}" class="${UI.filtroBanco === b ? "ativo" : ""}"><i style="background:${corBanco(b)}"></i>${esc(b)}</button>`).join("")}
+  </div>`;
+}
+
+function segmentoFinancas() {
+  const seg = UI.finSeg || "mov";
+  return `<div class="segmento seg-listas seg-fin" role="tablist">
+    <button role="tab" data-fin-seg="mov" class="${seg === "mov" ? "ativo" : ""}">💸 Movimentação</button>
+    <button role="tab" data-fin-seg="inv" class="${seg === "inv" ? "ativo" : ""}">🐷 Investimentos</button>
+  </div>`;
+}
+
+function aplicarMovimento(inv, valor) {
+  inv.valor = Math.max(0, Math.round((inv.valor + valor) * 100) / 100);
+  inv.atualizado = hojeIso();
+  (inv.movimentos = inv.movimentos || []).push({ data: hojeIso(), valor });
+}
+
+function renderInvestimentos() {
+  const todos = S.investimentos;
+  const lista = todos.filter((i) => !UI.filtroBanco || i.banco === UI.filtroBanco);
+  const total = lista.reduce((s, i) => s + i.valor, 0);
+  const porTipo = {}, porBanco = {};
+  lista.forEach((i) => { const t = tipoInvest(i.tipo); porTipo[t] = (porTipo[t] || 0) + i.valor; });
+  todos.forEach((i) => { const b = i.banco || "Sem banco"; porBanco[b] = (porBanco[b] || 0) + i.valor; });
+  const tipos = Object.entries(porTipo).sort((a, b) => b[1] - a[1]);
+  const bancosOrd = Object.entries(porBanco).sort((a, b) => b[1] - a[1]);
+  const grupos = {};
+  [...lista].sort((a, b) => b.valor - a.valor).forEach((i) => { (grupos[i.banco || "Sem banco"] = grupos[i.banco || "Sem banco"] || []).push(i); });
+  const ultimoMov = lista.flatMap((i) => i.movimentos || []).filter((m) => m.data.startsWith(mesIso(new Date()))).reduce((s, m) => s + m.valor, 0);
+
+  tela.innerHTML = `
+    <div class="mes-nav"><h1>Finanças</h1></div>
+    ${segmentoFinancas()}
+    ${filtroBancos()}
+
+    <section class="heroi" style="margin-top:12px">
+      <div class="heroi-topo"><span>Total guardado${UI.filtroBanco ? ` no ${esc(UI.filtroBanco)}` : ""}</span>
+        ${ultimoMov ? `<span class="selo ${ultimoMov > 0 ? "bom" : "ruim"}">${ultimoMov > 0 ? "▲" : "▼"} ${brl(Math.abs(ultimoMov))} no mês</span>` : `<span class="selo bom">${lista.length} ${lista.length === 1 ? "investimento" : "investimentos"}</span>`}</div>
+      <div class="heroi-valor">${brl(total)}</div>
+      ${tipos.length ? `<div class="faixa">${tipos.map(([t, v]) => `<i style="flex:${v};background:${INVEST_TIPOS[t][1]}"></i>`).join("")}</div>
+      <div class="legenda-prio">${tipos.map(([t, v]) => `<span><i style="background:${INVEST_TIPOS[t][1]}"></i>${t} ${Math.round((v / total) * 100)}%</span>`).join("")}</div>` : ""}
+      <div class="heroi-acoes" style="grid-template-columns:1fr">
+        <button class="add-receita" data-novo-invest="1">${svg('<path d="M12 5v14M5 12h14"/>')}Novo investimento</button>
+      </div>
+    </section>
+
+    ${!UI.filtroBanco && bancosOrd.length > 1 ? `
+      <div class="secao"><h2>Por banco</h2></div>
+      <div class="duas">${bancosOrd.map(([b, v]) => `<button class="cartao stat banco-card" data-filtro-banco="${esc(b === "Sem banco" ? "" : b)}" style="text-align:left;border-top:3px solid ${b === "Sem banco" ? "#4A5160" : corBanco(b)}">
+        <div class="rot">${esc(b)}</div><div class="val">${brl(v)}</div><div class="det">${Math.round((v / (todos.reduce((s, i) => s + i.valor, 0) || 1)) * 100)}% do total</div></button>`).join("")}</div>` : ""}
+
+    ${tipos.length ? `<div class="secao"><h2>Por tipo</h2></div>
+      <div class="cartao"><ul class="cats">${tipos.map(([t, v]) => `<li><div class="linha-tipo">
+        <span class="chip-ico" style="background:${INVEST_TIPOS[t][1]}26">${INVEST_TIPOS[t][0]}</span>
+        <span class="cat-corpo"><span class="cat-topo"><span>${t}</span><b>${brl(v)}</b></span>
+          <span class="cat-barra"><i style="width:${(v / tipos[0][1]) * 100}%;background:${INVEST_TIPOS[t][1]}"></i></span></span>
+        <span class="cat-pct">${Math.round((v / total) * 100)}%</span></div></li>`).join("")}</ul></div>` : ""}
+
+    <div class="secao"><h2>Seus investimentos</h2><button class="btn-lancar" data-novo-invest="1">${svg('<path d="M12 5v14M5 12h14"/>')}Adicionar</button></div>
+    ${lista.length ? Object.entries(grupos).map(([b, itens]) => `
+      <div class="dia-cab"><span><i class="bolinha" style="background:${b === "Sem banco" ? "#4A5160" : corBanco(b)}"></i> ${esc(b)}</span><span>${brl(itens.reduce((s, i) => s + i.valor, 0))}</span></div>
+      <div class="lista">${itens.map((i) => {
+        const t = tipoInvest(i.tipo);
+        return `<button class="lanc invest" data-invest="${i.id}">
+          <span class="ico" style="background:${INVEST_TIPOS[t][1]}26">${INVEST_TIPOS[t][0]}</span>
+          <span><span class="desc">${esc(i.descricao)}</span><br><span class="meta">${t}${i.rendimento ? ` · ${esc(i.rendimento)}` : ""}${i.atualizado ? ` · atualizado ${dataCurta(i.atualizado).slice(5)}` : ""}</span></span>
+          <span class="valor">${brl(i.valor)}</span><span class="seta-dir">${ICONE_DIR}</span></button>`;
+      }).join("")}</div>`).join("")
+    : `<div class="vazio grande"><div class="emoji">🐷</div><b>${todos.length ? "Nada guardado nesse banco" : "Comece a anotar o que você guardou"}</b>
+        <span>Adicione sua caixinha, poupança, CDB ou Tesouro com o valor de hoje. Depois é só tocar nele pra guardar mais ou retirar.</span></div>`}
+  `;
+}
+
+function abrirFolhaInvest(inv) {
+  const novo = !inv;
+  const i = inv || { descricao: "", tipo: "Caixinha", banco: UI.filtroBanco || S.cfg.bancos[0] || null, valor: 0, rendimento: "" };
+  const valorTxt = i.valor ? String(i.valor.toFixed(2)).replace(".", ",") : "";
+  abrirFolhaPersonalizada(`
+    <h2>${novo ? "Novo investimento" : esc(i.descricao)}</h2>
+    ${!novo ? `<div class="mov-invest">
+      <div class="rot">Saldo atual</div><div class="val-grande">${brl(i.valor)}</div>
+      <div class="add-linha" style="margin-top:10px"><input id="mov-valor" inputmode="decimal" placeholder="Valor para guardar ou retirar"></div>
+      <div class="heroi-acoes" style="margin-top:10px">
+        <button type="button" class="add-receita" id="mov-guardar">${svg('<path d="M12 5v14M5 12h14"/>')}Guardar</button>
+        <button type="button" class="add-gasto" id="mov-retirar">${svg('<path d="M5 12h14"/>')}Retirar</button>
+      </div></div>
+      <div class="secao" style="margin:20px 2px 10px"><h2>Editar dados</h2></div>` : ""}
+    <form id="form-invest">
+      <div class="campo"><label for="inv-desc">Descrição</label><input id="inv-desc" required placeholder="Caixinha reserva, CDB 102%…" value="${esc(i.descricao)}"></div>
+      <div class="campo"><label>Tipo</label><div class="chips" id="inv-tipo">
+        ${Object.keys(INVEST_TIPOS).map((t) => `<button type="button" data-tipo="${t}" class="${tipoInvest(i.tipo) === t ? "ativo" : ""}">${INVEST_TIPOS[t][0]} ${t}</button>`).join("")}</div></div>
+      ${htmlBancos("inv-banco", i.banco)}
+      <div class="lado">
+        <div class="campo valor-grande"><label for="inv-valor">${novo ? "Quanto tem guardado (R$)" : "Saldo (R$)"}</label><input id="inv-valor" inputmode="decimal" placeholder="0,00" value="${valorTxt}" required></div>
+        <div class="campo"><label for="inv-rend">Rendimento (opcional)</label><input id="inv-rend" placeholder="100% do CDI" value="${esc(i.rendimento || "")}"></div>
+      </div>
+      <button class="btn primario largo" type="submit">${novo ? "Salvar investimento" : "Salvar alterações"}</button>
+      ${!novo ? `<button type="button" class="btn perigo largo" id="inv-apagar" style="margin-top:8px">Apagar investimento</button>` : ""}
+    </form>`, () => {
+    folha.querySelectorAll(".chips").forEach((g) => g.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      const ja = b.classList.contains("ativo");
+      g.querySelectorAll("button").forEach((x) => x.classList.remove("ativo"));
+      if (!(g.id === "inv-banco" && ja)) b.classList.add("ativo");
+    }));
+    folha.querySelector("#form-invest").onsubmit = (e) => {
+      e.preventDefault();
+      const valor = parseValor(folha.querySelector("#inv-valor").value || "") || 0;
+      const dados = {
+        descricao: folha.querySelector("#inv-desc").value.trim() || folha.querySelector("#inv-tipo .ativo").dataset.tipo,
+        tipo: folha.querySelector("#inv-tipo .ativo").dataset.tipo,
+        banco: folha.querySelector("#inv-banco .ativo")?.dataset.banco || null,
+        rendimento: folha.querySelector("#inv-rend").value.trim(),
+      };
+      if (novo) {
+        S.investimentos.push({ id: novoId(), ...dados, valor, atualizado: hojeIso(), movimentos: [{ data: hojeIso(), valor }] });
+      } else {
+        if (valor !== inv.valor) aplicarMovimento(inv, valor - inv.valor);
+        Object.assign(inv, dados);
+      }
+      salvar(); fecharFolha(); render(); mostrarAviso(novo ? "Investimento salvo" : "Alterações salvas");
+    };
+    if (!novo) {
+      const mover = (sinal) => {
+        const v = parseValor(folha.querySelector("#mov-valor").value || "");
+        if (!v) { mostrarAviso("Digite o valor"); folha.querySelector("#mov-valor").focus(); return; }
+        if (sinal < 0 && v > inv.valor) { mostrarAviso(`Você só tem ${brl(inv.valor)} aqui`); return; }
+        aplicarMovimento(inv, sinal * v);
+        salvar(); fecharFolha(); render(); mostrarAviso(sinal > 0 ? `${brl(v)} guardados` : `${brl(v)} retirados`);
+      };
+      folha.querySelector("#mov-guardar").onclick = () => mover(1);
+      folha.querySelector("#mov-retirar").onclick = () => mover(-1);
+      folha.querySelector("#inv-apagar").onclick = (e) => {
+        if (e.target.dataset.ok) { S.investimentos = S.investimentos.filter((x) => x.id !== inv.id); salvar(); fecharFolha(); render(); mostrarAviso("Investimento apagado"); }
+        else { e.target.dataset.ok = "1"; e.target.textContent = "Toque de novo para apagar"; }
+      };
+    }
   });
 }
 
@@ -1277,6 +1607,11 @@ const folha = document.getElementById("folha"), fundo = document.getElementById(
 let modoFolha = "evento";
 
 let preFolha = {};
+function tileCategoria(tipo, c, ativo) {
+  const [emoji, cor] = CATEGORIAS[tipo][c];
+  return `<button type="button" class="tile-cat${ativo ? " ativo" : ""}" data-cat="${esc(c)}" style="--cor:${cor}">
+    <span class="tile-ico" style="background:${cor}26">${emoji}</span><span class="tile-nome">${esc(c)}</span></button>`;
+}
 function abrirFolha(modo = "evento", pre = {}) {
   modoFolha = modo; preFolha = pre || {}; desenharFolha();
   folha.hidden = false; fundo.hidden = false;
@@ -1318,19 +1653,55 @@ function desenharFolha() {
     ` : `
       <div class="campo valor-grande${falta("f-valor")}"><label for="f-valor">Valor (R$)</label><input id="f-valor" inputmode="decimal" required placeholder="0,00" value="${valorTxt}"></div>
       <div class="campo"><label for="f-desc">Descrição</label><input id="f-desc" placeholder="${tipo === "despesa" ? "Farmácia" : "Salário"}" value="${esc(p.descricao || p.titulo || "")}"></div>
-      <div class="campo"><label>Categoria</label><div class="chips" id="f-cat">
-        ${Object.keys(CATEGORIAS[tipo]).map((c) => `<button type="button" data-cat="${c}" class="${c === catPre ? "ativo" : ""}">${CATEGORIAS[tipo][c][0]} ${c}</button>`).join("")}</div></div>
+      <div class="campo"><label>Categoria</label>
+        <div class="grade-cat" id="f-cat">
+          ${Object.keys(CATEGORIAS[tipo]).map((c) => tileCategoria(tipo, c, c === catPre)).join("")}
+          <button type="button" class="tile-cat nova" id="nova-cat"><span class="tile-ico">+</span><span class="tile-nome">Nova</span></button>
+        </div>
+        <div class="form-cat" id="form-cat" hidden>
+          <input id="cat-nome" placeholder="Nome da categoria: Pet, Games…" maxlength="18" autocomplete="off">
+          <div class="emojis-cat">${EMOJIS_CAT.map((e, i) => `<button type="button" data-emoji="${e}" class="${i === 0 ? "ativo" : ""}">${e}</button>`).join("")}</div>
+          <div class="cores cores-cat">${CORES_CAT.map((c, i) => `<button type="button" data-cor-cat="${c}" class="${i === 0 ? "ativo" : ""}" style="background:${c}" aria-label="Cor"></button>`).join("")}</div>
+          <div class="botoes"><button type="button" class="btn primario" id="criar-cat">Criar categoria</button><button type="button" class="btn" id="cancelar-cat">Cancelar</button></div>
+        </div></div>
       ${tipo === "despesa" ? `<div class="campo"><label>Pagamento</label><div class="chips" id="f-met">
         ${METODOS.map((m) => `<button type="button" data-met="${m}" class="${p.metodo === m ? "ativo" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>` : ""}
+      ${htmlBancos("f-banco", p.banco || UI.filtroBanco, tipo === "despesa" ? "Saiu de qual banco" : "Entrou em qual banco")}
       <div class="campo"><label for="f-data">Dia</label><input id="f-data" type="date" required value="${p.data || hojeIso()}"></div>
       <button class="btn primario largo" type="submit">Salvar ${tipo === "despesa" ? "gasto" : "receita"}</button>
     `}
     </form>`;
+  const grade = folha.querySelector("#f-cat.grade-cat");
+  if (grade) {
+    const formCat = folha.querySelector("#form-cat");
+    grade.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      if (b.id === "nova-cat") { formCat.hidden = !formCat.hidden; if (!formCat.hidden) folha.querySelector("#cat-nome").focus(); return; }
+      grade.querySelectorAll(".tile-cat").forEach((x) => x.classList.toggle("ativo", x === b));
+    });
+    formCat.querySelectorAll(".emojis-cat, .cores-cat").forEach((g) => g.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      g.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
+    }));
+    folha.querySelector("#cancelar-cat").onclick = () => { formCat.hidden = true; };
+    folha.querySelector("#criar-cat").onclick = () => {
+      const nome = folha.querySelector("#cat-nome").value.trim().replace(/^./, (l) => l.toUpperCase());
+      if (!nome) { mostrarAviso("Dê um nome para a categoria"); folha.querySelector("#cat-nome").focus(); return; }
+      if (Object.keys(CATEGORIAS[tipo]).some((c) => semAcento(c) === semAcento(nome))) { mostrarAviso("Essa categoria já existe"); return; }
+      const emoji = formCat.querySelector(".emojis-cat .ativo").dataset.emoji, cor = formCat.querySelector(".cores-cat .ativo").dataset.corCat;
+      S.cfg.catExtras[tipo] = { ...(S.cfg.catExtras[tipo] || {}), [nome]: [emoji, cor] };
+      aplicarCategorias(); salvar();
+      grade.querySelectorAll(".tile-cat").forEach((x) => x.classList.remove("ativo"));
+      grade.querySelector("#nova-cat").insertAdjacentHTML("beforebegin", tileCategoria(tipo, nome, true));
+      formCat.hidden = true; folha.querySelector("#cat-nome").value = "";
+      mostrarAviso(`Categoria ${nome} criada`);
+    };
+  }
   folha.querySelectorAll(".chips").forEach((g) => g.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     const jaAtivo = b.classList.contains("ativo");
     g.querySelectorAll("button").forEach((x) => x.classList.remove("ativo"));
-    if (!(g.id === "f-met" && jaAtivo)) b.classList.add("ativo");
+    if (!((g.id === "f-met" || g.id === "f-banco") && jaAtivo)) b.classList.add("ativo");
   }));
   folha.querySelectorAll(".campo.falta input").forEach((i) => i.addEventListener("input", () => i.closest(".campo").classList.remove("falta"), { once: true }));
   document.getElementById("form-add").addEventListener("submit", (e) => {
@@ -1347,7 +1718,8 @@ function desenharFolha() {
       r = executar({ acao: "add_transacao", tipo, valor,
         descricao: document.getElementById("f-desc").value || folha.querySelector("#f-cat .ativo").dataset.cat,
         categoria: folha.querySelector("#f-cat .ativo").dataset.cat,
-        metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null, data: document.getElementById("f-data").value });
+        metodo: folha.querySelector("#f-met .ativo")?.dataset.met || null, banco: folha.querySelector("#f-banco .ativo")?.dataset.banco || null,
+        data: document.getElementById("f-data").value });
     }
     if (r.erro) { mostrarAviso(r.texto); return; }
     if (UI.aba === "hoje") UI.respostas = [r];
@@ -1397,6 +1769,10 @@ tela.addEventListener("click", (e) => {
     const [i, j] = d.escolha.split("-").map(Number), o = UI.respostas[i]?.opcoes?.[j];
     if (o) { UI.respostas.splice(i, 1); render(); abrirFolha(o[1], o[2]); }
   }
+  else if (d.finSeg) { UI.finSeg = d.finSeg; render(); }
+  else if (d.filtroBanco !== undefined) { UI.filtroBanco = d.filtroBanco || null; UI.filtroCat = null; render(); }
+  else if (d.novoInvest) abrirFolhaInvest(null);
+  else if (d.invest) { const i = S.investimentos.find((x) => x.id === Number(d.invest)); if (i) abrirFolhaInvest(i); }
   else if (d.listaSeg) { UI.lista = d.listaSeg; render(); }
   else if (d.marcar) { const i = S.mercado.find((x) => x.id === Number(d.marcar)); if (i) { i.feito = !i.feito; salvar(); render(); } }
   else if (d.delItem) { S.mercado = S.mercado.filter((x) => x.id !== Number(d.delItem)); salvar(); render(); }
@@ -1430,10 +1806,6 @@ tela.addEventListener("click", (e) => {
 });
 
 /* Campo de escrever (fixo na tela Hoje) */
-document.getElementById("atalhos").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-atalho]"); if (!b) return;
-  taEntrada.value = b.dataset.atalho.toLowerCase() + " "; taEntrada.focus();
-});
 const taEntrada = document.getElementById("entrada");
 taEntrada.addEventListener("input", () => { taEntrada.style.height = "auto"; taEntrada.style.height = taEntrada.scrollHeight + "px"; });
 taEntrada.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarAssistente(); } });
@@ -1447,11 +1819,37 @@ window.Capacitor?.Plugins?.App?.addListener?.("backButton", () => {
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !folha.hidden) fecharFolha(); });
 
+/* Barras somem ao rolar para baixo e voltam ao rolar para cima */
+let ultimoY = window.scrollY, acumulado = 0;
+window.addEventListener("scroll", () => {
+  const y = Math.max(window.scrollY, 0), dy = y - ultimoY;
+  ultimoY = y;
+  if (document.activeElement && document.activeElement.id === "entrada") return; // digitando: não esconde
+  acumulado = Math.sign(dy) === Math.sign(acumulado) ? acumulado + dy : dy;
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  if (y > max + 2) return; // efeito elástico no fim da página
+  if (y < 60) document.body.classList.remove("barras-ocultas");
+  else if (acumulado > 24) document.body.classList.add("barras-ocultas");
+  else if (acumulado < -16) document.body.classList.remove("barras-ocultas");
+}, { passive: true });
+function mostrarBarras() { document.body.classList.remove("barras-ocultas"); acumulado = 0; }
+
 /* Atualiza a tela quando vira o dia ou quando o app volta do segundo plano. */
-document.addEventListener("visibilitychange", () => { if (!document.hidden && UI.aba !== "ajustes") render(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { if (S.cfg.emailUrl) { clearTimeout(timerSync); sincronizar("dados"); } }
+  else if (UI.aba !== "ajustes") render();
+});
+setTimeout(() => { if (S.cfg.emailUrl) sincronizar("dados"); }, 5000);
 setInterval(() => { checarNoNavegador(); }, 30000);
 
 aplicarTema();
+/* Tela de abertura: 3 segundos com o anel girando */
+setTimeout(() => {
+  const ab = document.getElementById("abertura");
+  if (!ab) return;
+  ab.classList.add("saindo");
+  setTimeout(() => ab.remove(), 450);
+}, 3000);
 render();
 prepararNotificacoes();
 checarNoNavegador();
